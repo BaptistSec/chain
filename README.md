@@ -59,6 +59,7 @@ python3 ChainDemo.py --selftest
 
 ## Known limits
 
+- git ZIP downloads give LF line endings for the .bat launchers. Use the release ZIP for the exact tested files.
 - On Windows, `python` may be a shortcut to the Microsoft Store without a working interpreter. If the launcher opens the Store or fails, install Python from python.org.
 - Not tested on a real Windows console: the animated mode, the arrow keys and how smooth the screen feels. It has been tested on Linux, and an earlier build was checked in Windows CI.
 - Some rebounds (side walls, bumpers, mirrors) add downward drift, and a 1,200-step limit stops any very long shot. About 0.7% of random shots still reach that limit.
