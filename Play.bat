@@ -1,5 +1,5 @@
 @echo off
-title CHAIN CH12
+title CHAIN CH13
 cd /d "%~dp0"
 set CHAIN_LAUNCHER=1
 set CHAINARGS=%*
