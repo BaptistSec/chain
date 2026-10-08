@@ -16,13 +16,18 @@ else:
     import termios
     import tty
 
-Version = "CH13"
+Version = "CH14"
 PegCap = 64
 PegGap = 2
 Width = 100
 Height = 38
 CannonX = 50
-ShotLimit = 10
+ShotLimit = 8
+DockHalf = 7
+DockSpan = Width - 1 - 2 * DockHalf
+CatchPoints = 400
+DockCap = 2
+DockPhase = 37
 StepCap = 3600
 LowerPegs = 16
 LowerTop = 25
@@ -37,7 +42,7 @@ BounceDrift = 7
 TargetCount = 12
 GroupSize = 3
 CascadeCap = 5
-PreviewSteps = 160
+PreviewSteps = 70
 DefaultAim = 19
 LooseSymbols = "o+"
 SolidSymbols = "o+#*BF"
@@ -83,9 +88,17 @@ class Shot:
         self.Mult = 1
         self.SettlePops = 0
         self.Steps = 0
+        self.Caught = False
+        self.Paid = False
+        self.FloorX = -1
 
 
 LayoutNames = ["diamonds", "waves", "chevrons", "arches", "rings"]
+
+
+def DockX(step):
+    p = step % (2 * DockSpan)
+    return DockHalf + (p if p <= DockSpan else 2 * DockSpan - p)
 
 
 def Damp(v):
@@ -184,6 +197,7 @@ def Credit(shot, points, counts=True):
 class Board:
     def __init__(self, seed):
         self.Seed = seed
+        self.DockPaid = 0
         self.Grid = {}
         self.Bumps = {}
         self.Extra = 0
@@ -489,6 +503,8 @@ class Board:
                     m = max(abs(vx), abs(vy))
                     ay = 0
                     continue
+                shot.FloorX = x
+                shot.Caught = abs(x - DockX(shot.Steps + DockPhase * len(self.Log))) <= DockHalf
                 break
             flipX = flipY = False
             cells = []
@@ -580,6 +596,11 @@ class Board:
         if shot.Kind == "s" and shot.Targets <= 1:
             shot.Bonus += 1
             shot.Refund = 1
+        if shot.Caught and self.DockPaid < DockCap:
+            self.DockPaid += 1
+            shot.Paid = True
+            shot.Bonus += 1
+            shot.Points += CatchPoints
         self.Extra += shot.Bonus
         if shot.Targets:
             self.Streak += 1
@@ -745,6 +766,7 @@ def AimDegrees(aim):
 
 
 Escape = "\x1b"
+KeyPattern = __import__("re").compile(r"\[(?![#o+*\-\u2591\u2593\u25cf\u25c9 ]*\])[A-Za-z0-9<>/ +]{1,10}\]")
 Strip = __import__("re").compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 Reset = Escape + "[0m"
 Colours = {
@@ -762,6 +784,9 @@ Colours = {
     "fall": "1;30;106",
     "pop": "1;97;41",
     "title": "1;97;44",
+    "key": "1;30;43",
+    "dock": "1;38;5;214",
+    "dockhit": "1;30;102",
     "dim": "2",
     "good": "1;32",
 }
@@ -848,11 +873,13 @@ Premise = [
     "Fill the credit bar on all three sectors to bring the grid back.",
 ]
 Help = [
-    "Left / Right  aim          Space  fire         p  preview",
-    "1 to 4  choose the ball    f  fast             q  quit",
+    "[<] [>]  aim          [Space]  fire         [P]  preview",
+    "[1] to [4]  choose the ball    [F]  fast        [Q]  quit",
     "Gravity pulls the charge down. Pegs, walls, mirrors and the floor cost it speed,",
     "so a shot has a short life. Spend it where it counts.",
     "Clear nodes in one shot to build a rally. Credits open the next sector.",
+    "The gold line on the floor is the dock. It sweeps side to side. Land the charge in it",
+    "for a free shot and +400, but only the first 2 catches on each board pay.",
 ]
 
 
@@ -1021,7 +1048,9 @@ class Screen:
         code = Colours.get(key)
         if code is None:
             return text
-        if key in ("title", "fall", "pop"):
+        if key == "key":
+            return Escape + "[" + code + "m" + text + Escape + "[22;39;49m" + tail
+        if key in ("title", "fall", "pop", "dockhit"):
             return Escape + "[" + code + "m" + text + Reset + tail
         return Escape + "[" + code + "m" + text + Escape + "[22;39m" + tail
 
@@ -1124,10 +1153,16 @@ class Screen:
                     row += (Reset + background) if current in (Colours["pop"], Colours["fall"]) else Escape + "[22;39m"
             row = shake + corners[5] + background + row + ("" if self.Mono else Escape + "[49m") + corners[5]
             lines.append(row)
-        lines.append(shake + corners[2] + corners[4] * Width + corners[3])
+        dockAt = fx.get("dock", DockX(DockPhase * len(board.Log)))
+        left = max(0, dockAt - DockHalf)
+        right = min(Width - 1, dockAt + DockHalf)
+        glyph = "=" if self.Plain else "\u2550"
+        segment = glyph * (right - left + 1)
+        segment = self.Paint("dockhit" if fx.get("dockhit") else "dock", segment)
+        lines.append(shake + corners[2] + corners[4] * left + segment + corners[4] * (Width - 1 - right) + corners[3])
         legend = " " + self.Paint("o", self.Glyph("o")) + " " + self.Paint("+", self.Glyph("+")) + " loose   " + self.Paint("#", self.Glyph("#")) + " target   "
-        legend += self.Paint("*", self.Glyph("*")) + (" bumper (3 hits)   " if self.Plain else " bumper (3 hits, wears)   ") + self.Paint("B", self.Glyph("B")) + " bomb   "
-        legend += self.Paint("F", self.Glyph("F")) + " free shot (heart)   " + self.Paint("/", self.Glyph("/")) + " " + self.Paint("\\", self.Glyph("\\")) + " mirror"
+        legend += self.Paint("*", self.Glyph("*")) + (" bumper (3 hits)   " if self.Plain else " bumper (3 hits)   ") + self.Paint("B", self.Glyph("B")) + " bomb   "
+        legend += self.Paint("dock", glyph if False else ("=" if self.Plain else "\u2550")) + " dock (catch)   " + self.Paint("F", self.Glyph("F")) + " free shot   " + self.Paint("/", self.Glyph("/")) + " " + self.Paint("\\", self.Glyph("\\")) + " mirror"
         lines.append(legend)
         if self.Watching or showResult:
             lines.append(" After each shot, loose pegs fall. 3+ touching pegs of one kind pop, with any target beside them.")
@@ -1138,21 +1173,21 @@ class Screen:
         info = getattr(board, "RunInfo", None)
         if info is not None and not self.Watching:
             nxt = "  ".join(KindNames[c] + " x" + str(info.Satchel.get(c, 0)) for c in RunPool if info.Satchel.get(c, 0))
-            lines.append(" Board " + str(info.K) + "/" + str(len(RunQuotas)) + "  Second Chance refunds " + str(sum(x.Refund for x in board.Log)) + "  Heart shots " + str(board.Extra - sum(x.Refund for x in board.Log)) + "  Next: " + nxt)
+            lines.append(" Board " + str(info.K) + "/" + str(len(RunQuotas)) + "  Refunds " + str(sum(x.Refund for x in board.Log)) + "  Dock " + ("used up" if board.DockPaid >= DockCap else str(DockCap - board.DockPaid) + " left") + "  Bonus shots " + str(board.Extra - sum(x.Refund for x in board.Log)) + "  Next: " + nxt)
         if self.Watching:
-            controls = " WATCH MODE   " + ("board cleared" if board.Won() else "out of shots" if board.Over() else "any key at the end closes it") + "   Ctrl+C stops"
+            controls = " WATCH MODE   " + ("board cleared" if board.Won() else "out of shots" if board.Over() else "[any key] at the end closes it") + "   [Ctrl+C] stops"
         elif showResult:
             info = getattr(board, "RunInfo", None)
             if info is None:
-                controls = " " + ("YOU WIN" if board.Won() else "OUT OF SHOTS") + "   r same board   n next board   q quit and show code"
+                controls = " " + ("YOU WIN" if board.Won() else "OUT OF SHOTS") + "   [R] same board   [N] next board   [Q] quit and show code"
             elif not board.Won():
-                controls = " OUT OF SHOTS   n new run " + str(NextRunNumber(info.Run)) + "   r restart run " + str(info.Run) + "   q quit and show code"
+                controls = " OUT OF SHOTS   [N] new run " + str(NextRunNumber(info.Run)) + "   [R] restart run " + str(info.Run) + "   [Q] quit and show code"
             elif info.K >= len(RunQuotas):
-                controls = " BOARD CLEARED, LAST BOARD   n finish the run   r restart run " + str(info.Run) + "   q quit and show code"
+                controls = " BOARD CLEARED, LAST BOARD   [N] finish the run   [R] restart run " + str(info.Run) + "   [Q] quit and show code"
             else:
-                controls = " BOARD CLEARED   n pick an upgrade   r restart run " + str(info.Run) + "   q quit and show code"
+                controls = " BOARD CLEARED   [N] pick an upgrade   [R] restart run " + str(info.Run) + "   [Q] quit and show code"
         else:
-            controls = " </> aim " + str(aim + 1) + "/" + str(len(Directions)) + " (" + str(AimDegrees(aim)) + " deg)  space fire  p preview " + ("on" if preview else "off") + "  f fast " + ("on" if self.Fast else "off") + ("  r restart run  n next  q quit  key skips" if getattr(board, "RunInfo", None) is not None else "  r redo  n next  q quit  key skips")
+            controls = " [<][>] aim " + str(aim + 1) + "/" + str(len(Directions)) + " " + str(AimDegrees(aim)) + "deg  [Space] fire  [P] preview " + ("on" if preview else "off") + "  [F] fast " + ("on" if self.Fast else "off") + ("  [R] restart  [N] next  [Q] quit" if getattr(board, "RunInfo", None) is not None else "  [R] redo  [N] next  [Q] quit")
         lines.append(controls)
         text = message[:Width]
         if not self.Mono and not self.Watching:
@@ -1164,8 +1199,14 @@ class Screen:
         lines.append(" " + text)
         return lines
 
+    def Keys_(self, line):
+        if self.Mono or "[" not in line:
+            return line
+        return KeyPattern.sub(lambda m: self.Paint("key", m.group(0)), line)
+
     def Show(self, lines):
         start = time.perf_counter()
+        lines = [self.Keys_(line) for line in lines]
         sys.stdout.write(Escape + "[H" + "".join(line + Escape + "[K\n" for line in lines) + Escape + "[J")
         sys.stdout.flush()
         Stats["Milliseconds"] += (time.perf_counter() - start) * 1000
@@ -1178,6 +1219,10 @@ def ShotMessage(board, shot):
         text += " (rally x" + str(shot.Rally) + ")"
     if shot.Mult > 1:
         text += " (streak x" + str(shot.Mult) + ")"
+    if shot.Paid:
+        text += ", caught in the dock +" + str(CatchPoints)
+    elif shot.Caught:
+        text += ", dock used up, no bonus"
     if shot.Bonus:
         text += ", +" + str(shot.Bonus) + " free shot"
     if shot.Kind != "n":
@@ -1221,6 +1266,7 @@ def Animate(screen, board, aim, kind="n"):
             previous.clear()
             previous.update(board.Grid)
             live = board.Live
+            fx["dock"] = DockX(live.Steps + DockPhase * len(board.Log)) if live else DockX(DockPhase * len(board.Log))
             rally = live.Rally if live else 1
             note = "Rally x" + str(rally) + " - " + str(live.Pegs) + " pegs" if rally > 1 else ""
             if stop > 0:
@@ -1290,6 +1336,14 @@ def Animate(screen, board, aim, kind="n"):
                 previous.update(board.Grid)
             fx["flash"] = {}
     shot = board.Play(aim, Hook, kind)
+    if shot.Paid and not (screen.Fast or screen.Reduced or screen.Mono or screen.Delay <= 0 or fx.get("skip") or screen.Watching):
+        fx["dock"] = DockX(shot.Steps + DockPhase * (len(board.Log) - 1))
+        fx["trail"] = []
+        for beat in range(4):
+            fx["dockhit"] = beat % 2 == 0
+            screen.Show(screen.Frame(board, aim, False, None, "CAUGHT in the dock  +" + str(CatchPoints) + "  free shot", False, fx))
+            time.sleep(min(0.03, BeatCap / 4))
+        fx["dockhit"] = False
     screen.LastSkipped = bool(fx.get("skip"))
     shot.Added = feel.get("added", 0.0)
     shot.Beats = feel.get("rally", 1)
@@ -1323,14 +1377,14 @@ def Watch(args, screen, keys):
         shot = Animate(screen, board, aim, kind)
         screen.Show(screen.Frame(board, aim, False, None, ShotMessage(board, shot), board.Over()))
         time.sleep(0.9)
-    screen.Show(screen.Frame(board, board.Log[-1].Aim if board.Log else DefaultAim, False, None, label + " finished. Press any key.", True))
+    screen.Show(screen.Frame(board, board.Log[-1].Aim if board.Log else DefaultAim, False, None, label + " finished. [any key]", True))
     keys.Read()
     return board
 
 
 BeatCap = 0.12
 LargeShotPoints = 1500
-RunQuotas = (8, 9, 10)
+RunQuotas = (9, 10, 10)
 RunPool = ["r", "x", "s"]
 RunStart = {"r": 1, "x": 1}
 
@@ -1376,6 +1430,8 @@ def ParseRunCode(code):
     if len(code) > MaxCodeLength:
         raise ValueError("Run code is too long")
     parts = code.strip().split("-")
+    if parts and parts[0] in ("CH12R", "CH13R"):
+        raise ValueError("Saved " + parts[0][:-1] + " run codes are no longer valid in " + Version + ". Start a new run.")
     if len(parts) != 5 or parts[0] != Version + "R":
         raise ValueError("Unknown run code version or wrong number of parts")
     if not parts[1].isdigit() or len(parts[1]) > 10:
@@ -1548,7 +1604,7 @@ def Run(args):
                         state.Boards.append(board)
                         total = sum(b.Score for b in state.Boards)
                         bestLines = BestLines(*RecordBest(total))
-                        screen.Show(["", " RUN COMPLETE   all " + str(len(RunQuotas)) + " boards cleared", " Total score " + str(total)] + bestLines + ["", " Run code (replays this run):", " " + state.Code(), "", " Press any key for run " + str(NextRunNumber(state.Run)) + ", or q to quit."])
+                        screen.Show(["", " RUN COMPLETE   all " + str(len(RunQuotas)) + " boards cleared", " Total score " + str(total)] + bestLines + ["", " Run code (replays this run):", " " + state.Code(), "", " [any key] run " + str(NextRunNumber(state.Run)) + "    [Q] quit"])
                         if keys.Read() in ("q", "esc"):
                             break
                         state = RunState(NextRunNumber(state.Run))
