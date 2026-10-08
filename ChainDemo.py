@@ -766,14 +766,15 @@ def AimDegrees(aim):
 
 
 Escape = "\x1b"
+HaloSymbols = ()
 KeyPattern = __import__("re").compile(r"\[(?![#o+*\-\u2591\u2593\u25cf\u25c9 ]*\])[A-Za-z0-9<>/ +]{1,10}\]")
 Strip = __import__("re").compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 Reset = Escape + "[0m"
 Colours = {
-    "o": "38;5;45",
+    "o": "1;38;5;51",
     "+": "38;5;171",
     "#": "1;38;5;220",
-    "*": "38;5;78",
+    "*": "1;38;5;84",
     "B": "1;38;5;203",
     "F": "1;38;5;120",
     "/": "38;5;250",
@@ -784,15 +785,16 @@ Colours = {
     "fall": "1;30;106",
     "pop": "1;97;41",
     "title": "1;97;44",
-    "key": "1;30;43",
+    "key": "1;38;5;214",
     "dock": "1;38;5;214",
     "dockhit": "1;30;102",
     "dim": "2",
+    "halo": "48;5;238",
     "good": "1;32",
 }
 TrailColours = ["38;5;252", "38;5;248", "38;5;245", "38;5;242", "38;5;240", "38;5;238"]
 BurstGlyphs = {3: ("*", "1;38;5;226"), 2: ("+", "38;5;208"), 1: (".", "38;5;124")}
-UnicodeGlyphs = {"o": "\u25cf", "+": "\u25c6", "#": "\u2593", "*": "\u25c9", "B": "\u00a4", "F": "\u2665", "/": "\u2571", "\\": "\u2572", "@": "\u25cf", ".": "\u00b7", ":": "\u2022"}
+UnicodeGlyphs = {"o": "\u25cf", "+": "\u25c6", "#": "\u2588", "*": "\u25c9", "B": "\u00a4", "F": "\u2665", "/": "\u2571", "\\": "\u2572", "@": "\u25cf", ".": "\u00b7", ":": "\u2022"}
 BumperGlyphs = ["\u25c9", "\u25ce", "\u25cb"]
 
 
@@ -1049,7 +1051,7 @@ class Screen:
         if code is None:
             return text
         if key == "key":
-            return Escape + "[" + code + "m" + text + Escape + "[22;39;49m" + tail
+            return Escape + "[" + code + "m" + text + Escape + "[22;39m" + tail
         if key in ("title", "fall", "pop", "dockhit"):
             return Escape + "[" + code + "m" + text + Reset + tail
         return Escape + "[" + code + "m" + text + Escape + "[22;39m" + tail
@@ -1062,7 +1064,7 @@ class Screen:
     def Bar(self, done, total, symbol):
         width = min(total, 20)
         filled = 0 if total == 0 else (done * width + total - 1) // total
-        full = "#" if self.Plain else {"o": "\u25cf", "#": "\u2593"}.get(symbol, symbol)
+        full = "#" if self.Plain else {"o": "\u25cf", "#": "\u2588"}.get(symbol, symbol)
         empty = "-" if self.Plain else "\u2591"
         return "[" + self.Paint(symbol, full * filled) + self.Paint("dim", empty * (width - filled)) + "]"
 
@@ -1134,6 +1136,8 @@ class Screen:
                     tokens.append((TrailColours[min(trailIndex[cell], len(TrailColours) - 1)], self.Glyph(":")))
                 elif cell in dots:
                     tokens.append((Colours["."], self.Glyph(".")))
+                elif not self.Plain and (board.Grid.get((x - 1, y)) in HaloSymbols or board.Grid.get((x + 1, y)) in HaloSymbols):
+                    tokens.append((Colours["halo"], " "))
                 else:
                     tokens.append((None, " "))
             if self.Mono:
@@ -1144,13 +1148,13 @@ class Screen:
                 for code, char in tokens:
                     if code != current:
                         if current is not None:
-                            row += (Reset + background) if current in (Colours["pop"], Colours["fall"]) else Escape + "[22;39m"
+                            row += (Reset + background) if current in (Colours["pop"], Colours["fall"], Colours["halo"]) else Escape + "[22;39m"
                         if code is not None:
                             row += Escape + "[" + code + "m"
                         current = code
                     row += char
                 if current is not None:
-                    row += (Reset + background) if current in (Colours["pop"], Colours["fall"]) else Escape + "[22;39m"
+                    row += (Reset + background) if current in (Colours["pop"], Colours["fall"], Colours["halo"]) else Escape + "[22;39m"
             row = shake + corners[5] + background + row + ("" if self.Mono else Escape + "[49m") + corners[5]
             lines.append(row)
         dockAt = fx.get("dock", DockX(DockPhase * len(board.Log)))
