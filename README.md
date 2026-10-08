@@ -35,10 +35,11 @@ All the `Chain*`, `Inert*`, `Pty*`, `Width*`, `Stale*` and `Mark*` scripts asser
 - `chain-satchel-design-draft7a.md` is the design note.
 - Earlier README text (version CH2) is replaced.
 
-## Update 8 Oct, 13:50
+## Update 8 Oct, 13:55
 
-- Version CH12b. Ball physics reworked: gravity pulls the ball down and every wall, peg, bumper, mirror and floor bounce costs it 10% of its speed, so a shot loses energy and ends instead of pinging forever.
-- New title screen with a short premise, a how to play page and a menu. Start it with `--menu` (Play.bat does).
-- QA passed this build on its own checks (not exhaustive, no human play, no Windows console). The test scripts are the CH12 ports (ChainTest12 and the others); the older CH10 test files are still here from the first push.
-- Next, not pushed yet: a CH13 layout change that fills the empty bottom rows with pegs (still in QA).
+- Version CH13 (QA passed on its own checks: not exhaustive, no human play, no Windows console).
+- Ball physics: gravity pulls the ball down and every wall, peg, bumper, mirror and floor bounce costs it 10% of its speed, so a shot loses energy and ends instead of pinging forever.
+- Title screen with a short premise, a how to play page and a menu. Start it with `--menu` (Play.bat does).
+- Layout: every board gets 16 extra pegs in the lower rows so the bottom of the field is no longer empty.
+- Tests for this version are the *13 scripts (ChainTest13 and the others). The *10 and *12 test files are older versions kept from earlier pushes and will fail against CH13 on purpose, because codes carry the version.
 - Not AI-proof. Not tested by me: a real Windows console, a person playing a full run, colour by eye.
