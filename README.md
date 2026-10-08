@@ -1,69 +1,24 @@
 # CHAIN
 
-A terminal game in Python. Aim a cannon, fire a ball into a board of pegs, and set off chain reactions. No third-party packages; Python 3 required.
+A terminal game in Python. Aim a cannon, fire a ball into a board of pegs and targets, and clear every board in a run. Python 3 standard library only.
 
-This is a test board (version CH2), not the full game.
+**Status: work in progress.** Version CH14. Everything below is builder-reported from my own automated tests. Not AI-proof. Not tested: a real Windows console, a person playing a full run, colour by a human eye.
 
-## Play
+## Run it
 
-You need Python 3 ([python.org](https://www.python.org/downloads/); on Windows tick "Add python.exe to PATH").
+- Linux or macOS: `python3 ChainDemo.py --menu`
+- Windows: keep `ChainDemo.py`, `Play.bat` and `PlayText.bat` in one folder and double-click `Play.bat`. Windows is untested.
 
-- **Windows:** keep `ChainDemo.py`, `Play.bat` and `PlayText.bat` in one folder and double-click `Play.bat`. If the window says the console does not support colour, double-click `PlayText.bat` instead (plain text mode, you type an aim number).
-- **Linux or macOS:** open a terminal in the folder and run `python3 ChainDemo.py`. Linux tested; macOS untested.
+The terminal needs at least 104 columns by 48 rows. `HowToRun.txt` has the keys and rules.
 
-The board is big. The window needs at least 104 columns and 47 rows. `Play.bat` tries to resize it. On Linux or macOS, enlarge the terminal or shrink the font.
+## What a run is
 
-## Goal
+Three boards. Earn the credit quota on each (9, 10, 10; one credit per target cleared) within 8 base shots (dock and heart bonus shots can add more). A dock sweeps the floor: land the ball in it for a free shot and +400 (first 2 catches per board). Press D on the menu for the daily run. The run code printed on exit replays the whole run; codes from CH13 and earlier no longer work.
 
-Clear all 16 targets (`#`) in 10 shots.
+![CHAIN CH14 board](screenshots/board-ch14.png)
 
-| Symbol | What it does |
-| --- | --- |
-| `o` `+` | Plain pegs. They pop when hit. |
-| `#` | Target. Clear them all to win. |
-| `B` | Bomb. Pops its neighbours and chains into bombs next to it. |
-| `*` | Bumper. Breaks on the 3rd hit, counted across shots. |
-| `/` `\` | Mirrors. |
+The picture is the game's own frame rendered to an image, not a live terminal capture.
 
-After a shot, loose pegs (`o` and `+`) fall into the gaps. If 3 or more of the same kind touch after falling, they pop, and pop targets next to them, and that can repeat.
+## Tests
 
-## Keys
-
-| Key | Action |
-| --- | --- |
-| left / right, or `a` / `d` | Change the aim (39 angles) |
-| space or enter | Fire |
-| `p` | Preview line on or off |
-| `f` | Ball animation off, for fast play |
-| `r` | Restart the same board |
-| `n` | Next board |
-| `q` | Quit and print your result and board code |
-
-## Options
-
-```
-python3 ChainDemo.py --seed 7
-python3 ChainDemo.py --code CODE
-python3 ChainDemo.py --check CODE --show
-python3 ChainDemo.py --text
-python3 ChainDemo.py --mono --delay 0
-python3 ChainDemo.py --selftest
-```
-
-- `--seed N` starts board N. A date such as `--seed 20261007` gives a shared daily board.
-- `--code CODE` loads a shared board code.
-- `--check CODE` prints a headless replay result. Add `--show` to print the board too.
-- `--text` plain text mode. `--mono` turns colour off. `--delay 0` makes the ball instant.
-- `--log` (interactive or `--text` play only, off unless you ask) adds your result to `ChainLog.txt` in the folder you run from when you quit after firing at least one shot. It does not log `--check` replays.
-- `--selftest` runs a built-in repeatability check.
-
-## Known limits
-
-- git ZIP downloads give LF line endings for the .bat launchers. Use the release ZIP for the exact tested files.
-- On Windows, `python` may be a shortcut to the Microsoft Store without a working interpreter. If the launcher opens the Store or fails, install Python from python.org.
-- Not tested on a real Windows console: the animated mode, the arrow keys and how smooth the screen feels. It has been tested on Linux, and an earlier build was checked in Windows CI.
-- Some rebounds (side walls, bumpers, mirrors) add downward drift, and a 1,200-step limit stops any very long shot. About 0.7% of random shots still reach that limit.
-
-## Licence
-
-MIT. See [LICENSE](LICENSE).
+The `*15` scripts (`ChainTest15.py`, `DockTest15.py`, `KeyTest15.py` and the rest) assert and exit non-zero on failure. They are my own tests, so treat results as builder-reported. `PtyDrive15.py` plays whole runs through a real pseudo-terminal.
