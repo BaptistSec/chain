@@ -1,5 +1,5 @@
 @echo off
-title CHAIN CH10 single board (text mode)
+title CHAIN CH12 single board (text mode)
 cd /d "%~dp0"
 set CHAIN_LAUNCHER=1
 mode con: cols=110 lines=50 >nul 2>nul
