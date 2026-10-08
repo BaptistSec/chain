@@ -1,0 +1,18 @@
+CHAIN CH10 (run prototype, builder-reported, not final)
+
+Keep these files together: ChainDemo.py, Play.bat, PlayText.bat, HowToRun.txt. Needs Python 3 (standard library only).
+Windows: double-click Play.bat (starts run 1; from a command prompt, Play.bat --run 7 or Play.bat --resume CODE also work, because arguments you give replace the default --run 1). Linux: python3 ChainDemo.py --run 1   (run numbers 1 to 1000000000).
+Window: at least 104 columns by 47 rows (Play.bat asks for 110x50).
+
+A RUN is three boards in a row with target quotas of 8, 9 and 10 (the Credits C/Q bar). Each board has 10 base shots and 12 physical targets, but you only need to earn the quota in credits (1 credit per target cleared, counted after the whole shot including settle), so some targets may still be standing when you win. The HUD shows Credits C/Q, never above Q. After boards 1 and 2 you pick one upgrade for the next boards, or skip.
+
+KEYS: left/right (or a/d) aim. Space or Enter fires. 1 normal, 2 Rebound, 3 Blast, 4 Second Chance (choose the ball for the next shot). p preview. f fast on/off. Any key during a shot skips it. r restarts the whole run from board 1. n goes on (new run after a loss, pick an upgrade after a win, finish on the last board). q quits and prints your run code.
+DRAFT: press 1, 2 or 3 to take that upgrade (+1 charge), or 0 to skip. You start with Rebound x1 and Blast x1.
+BALLS: Special balls use 1 charge each and charges refill at the start of every board; a draft pick adds 1 charge of that ball from the next board on. Rebound bounces off the floor once for a second pass. Blast, when it first touches a peg, blows up the pegs inside an 11x11 square around it (bumpers and mirrors survive; a bumper it touched still takes the hit), then keeps flying as a normal ball. Second Chance flies like a normal ball; after the whole shot and settle, if it cleared 0 or 1 targets the base shot is refunded (one extra shot), if it cleared 2 or more there is no refund. The charge is spent either way. Heart pegs still give one free shot each; a Second Chance refund and heart shots add together, each counted once. The HUD splits them: Second Chance refunds N, Heart shots H.
+BEATS: short drawing-only flashes (Rally x3 to x5, "1 credit to clear") that never change physics or scores. They are capped and are off with --reduced, f (fast) or a key skip.
+
+OPTIONS: --run N starts run N (1 to 1000000000; 0 is rejected). --resume CODE continues from a run code (printed when you quit); on Linux use python3 ChainDemo.py --resume CODE. --reduced removes beat pauses. --delay N, --ascii, --mono as before. --text (PlayText.bat) is the old single board mode only; it cannot be combined with --run or --resume. Codes from CH8 and CH9 are rejected.
+
+SCORE: the run total is the sum of the three board scores. There is no bonus for unused shots. q or esc quits from any screen, including the draft.
+
+NOT TESTED: a real Windows console, a human playing a full run, colour frames by eye. The tests here are my own and not AI-proof. Whether the draft is interesting over many runs is not shown.
