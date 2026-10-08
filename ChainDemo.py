@@ -3,6 +3,7 @@ import os
 import shutil
 import hashlib
 import math
+import random
 import sys
 import time
 
@@ -14,19 +15,20 @@ else:
     import termios
     import tty
 
-Version = "CH10"
+Version = "CH12"
 PegCap = 64
 PegGap = 2
 Width = 100
 Height = 38
 CannonX = 50
 ShotLimit = 10
-StepCap = 1200
+StepCap = 3600
 WallDrift = 12
 BlastRadius = 5
 KindNames = {"n": "normal", "r": "rebound", "x": "blast", "s": "second chance"}
-LateAfter = 300
-LateDrift = 10
+GravityEvery = 4
+Damping = 9
+Stall = 12
 BounceDrift = 7
 TargetCount = 12
 GroupSize = 3
@@ -80,6 +82,12 @@ class Shot:
 
 
 LayoutNames = ["diamonds", "waves", "chevrons", "arches", "rings"]
+
+
+def Damp(v):
+    if v >= 0:
+        return v * Damping // 10
+    return -((-v) * Damping // 10)
 
 
 def Line4(a, b):
@@ -439,24 +447,27 @@ class Board:
         rebound = ballKind == "r"
         while shot.Steps < maxSteps:
             shot.Steps += 1
-            if shot.Steps >= LateAfter and shot.Steps % 100 == 0:
-                vy += LateDrift
+            if shot.Steps % GravityEvery == 0:
+                vy += 1
                 m = max(abs(vx), abs(vy))
+            pace = max(100, m)
             ax += abs(vx)
             ay += abs(vy)
             sx = sy = 0
-            if ax >= m:
-                ax -= m
+            if ax >= pace:
+                ax -= pace
                 sx = 1 if vx > 0 else -1
-            if ay >= m:
-                ay -= m
+            if ay >= pace:
+                ay -= pace
                 sy = 1 if vy > 0 else -1
             if sx == 0 and sy == 0:
                 continue
             if sy > 0 and y + sy >= Height:
                 if rebound:
                     rebound = False
-                    vy = -vy
+                    vy = Damp(-vy)
+                    vx = Damp(vx)
+                    m = max(abs(vx), abs(vy))
                     ay = 0
                     continue
                 break
@@ -490,6 +501,10 @@ class Board:
                 vx = -vx
             if flipY:
                 vy = -vy
+            if flipX or flipY:
+                vx = Damp(vx)
+                vy = Damp(vy)
+                m = max(abs(vx), abs(vy))
             if not flipX:
                 x += sx
             if not flipY:
@@ -524,9 +539,12 @@ class Board:
             if symbol is not None and symbol in MirrorSymbols and uses.get((x, y), 0) < 2:
                 uses[(x, y)] = uses.get((x, y), 0) + 1
                 vx, vy = (-vy, -vx) if symbol == "/" else (vy, vx)
+                vx = Damp(vx)
+                vy = Damp(vy)
                 vy += BounceDrift
                 ax = ay = 0
                 m = max(abs(vx), abs(vy))
+            shot.Speed = m
             if hook:
                 hook(x, y)
         if settle:
@@ -797,6 +815,73 @@ class Keyboard:
         self.Read()
 
 
+TitleArt = [
+    "  ____ _   _    _    ___ _   _ ",
+    " / ___| | | |  / \\  |_ _| \\ | |",
+    "| |   | |_| | / _ \\  | ||  \\| |",
+    "| |___|  _  |/ ___ \\ | || |\\  |",
+    " \\____|_| |_/_/   \\_\\___|_| \\_|",
+]
+Premise = [
+    "The old relay grid is dark. Each board is a dead sector.",
+    "You are the last keeper. Fire a charge into the pegs,",
+    "light the nodes, and pass the signal along the chain.",
+    "Fill the credit bar on all three sectors to bring the grid back.",
+]
+Help = [
+    "Left / Right  aim          Space  fire         p  preview",
+    "1 to 4  choose the ball    f  fast             q  quit",
+    "Gravity pulls the charge down. Pegs, walls, mirrors and the floor cost it speed,",
+    "so a shot has a short life. Spend it where it counts.",
+    "Clear nodes in one shot to build a rally. Credits open the next sector.",
+]
+
+
+def TitleLines(screen, step, page):
+    lines = [""] * 3
+    for row in TitleArt:
+        lines.append(" " * 24 + row)
+    lines += ["", " " * 24 + "a terminal game of falling charges", ""]
+    if page == "help":
+        body = Help
+    else:
+        body = Premise[:step]
+    for row in body:
+        lines.append(" " * 14 + row)
+    lines.append("")
+    if page == "help":
+        lines.append(" " * 14 + "[any key] back")
+    elif step >= len(Premise):
+        lines.append(" " * 14 + "[Enter] new run    [H] how to play    [Q] quit")
+        lines.append(" " * 14 + "Continue a saved run:  --resume CODE")
+    else:
+        lines.append(" " * 14 + "[Enter] skip")
+    return lines
+
+
+def TitleScreen(screen, keys):
+    page = "title"
+    step = len(Premise) if (screen.Reduced or screen.Mono or screen.Delay == 0) else 0
+    while True:
+        screen.Show(TitleLines(screen, step, page))
+        if page == "title" and step < len(Premise):
+            time.sleep(0.45)
+            if keys.Pressed():
+                step = len(Premise)
+            else:
+                step += 1
+            continue
+        key = keys.Read()
+        if page == "help":
+            page = "title"
+        elif key in ("enter", "return", " ", "space"):
+            return random.SystemRandom().randint(1, MaxRunNumber)
+        elif key == "h":
+            page = "help"
+        elif key in ("q", "esc"):
+            return None
+
+
 def NextRunNumber(run):
     return run + 1 if run < MaxRunNumber else 1
 
@@ -1052,7 +1137,7 @@ def Animate(screen, board, aim, kind="n"):
                     extra = min(extra, room)
                     feel["added"] = feel.get("added", 0.0) + extra
                     stop += extra
-            weight = 1.0
+            weight = 100.0 / max(50, min(100, live.Speed)) if live and getattr(live, 'Speed', 0) else 1.0
             feel["step"] += 1
             if feel["step"] < 9:
                 weight *= 1.9 - 0.1 * feel["step"]
@@ -1179,7 +1264,7 @@ class RunState:
     def Code(self, board=None):
         done = self.Boards + ([board] if board is not None and board not in self.Boards else [])
         shots = "/".join(".".join(str(x.Aim) + ("" if x.Kind == "n" else x.Kind) for x in b.Log) for b in done)
-        return "CH10R-" + str(self.Run) + "-" + ".".join(str(q) for q in RunQuotas) + "-" + "".join(self.Picks) + "-" + shots
+        return Version + "R-" + str(self.Run) + "-" + ".".join(str(q) for q in RunQuotas) + "-" + "".join(self.Picks) + "-" + shots
 
 
 def ParseRunCode(code):
@@ -1290,6 +1375,8 @@ def Run(args):
     if args.resume:
         state, board = ResumeRun(args.resume)
         seed = board.Seed
+    elif args.menu:
+        state = None
     elif args.run:
         state = RunState(args.run)
         board = Attach(RunBoard(state.Run, state.K, state.Satchel), state)
@@ -1308,6 +1395,13 @@ def Run(args):
             screen.Keys = keys
             if args.replay or args.bot or args.script:
                 return Watch(args, screen, keys)
+            if args.menu:
+                picked = TitleScreen(screen, keys)
+                if picked is None:
+                    return None
+                state = RunState(picked)
+                board = Attach(RunBoard(state.Run, state.K, state.Satchel), state)
+                seed = board.Seed
             while True:
                 screen.Show(screen.Frame(board, aim, preview, None, message, board.Over()))
                 screen.ScoreMark = False
@@ -1597,6 +1691,7 @@ def Main():
     parser.add_argument("--export", type=str, default="")
     parser.add_argument("--log", action="store_true")
     parser.add_argument("--run", type=int, default=None)
+    parser.add_argument("--menu", action="store_true")
     parser.add_argument("--resume", type=str, default="")
     parser.add_argument("--reduced", action="store_true")
     args = parser.parse_args()
