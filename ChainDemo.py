@@ -1,6 +1,7 @@
 import argparse
 import os
 import shutil
+import stat
 import hashlib
 import math
 import random
@@ -855,6 +856,79 @@ Help = [
 ]
 
 
+def BestPath():
+    return os.environ.get("CHAIN_BEST_FILE") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "ChainBest.txt")
+
+
+BestLimit = 32
+
+
+def ReadBest(path):
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return 0, True
+    if not stat.S_ISREG(info.st_mode):
+        return 0, False
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read(BestLimit + 1)
+    except OSError:
+        return 0, True
+    if len(raw) > BestLimit:
+        return 0, True
+    try:
+        text = raw.decode("ascii").strip()
+    except UnicodeDecodeError:
+        return 0, True
+    if not text.isdigit() or len(text) > 12:
+        return 0, True
+    return int(text), True
+
+
+def WriteBest(path, total):
+    folder = os.path.dirname(path) or "."
+    temp = os.path.join(folder, ".chainbest-" + os.urandom(8).hex() + ".tmp")
+    created = False
+    try:
+        if os.path.lexists(path) and not stat.S_ISREG(os.lstat(path).st_mode):
+            return False
+        descriptor = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        created = True
+        with os.fdopen(descriptor, "w") as handle:
+            handle.write(str(total) + "\n")
+        os.replace(temp, path)
+        return True
+    except OSError:
+        if created:
+            try:
+                os.unlink(temp)
+            except OSError:
+                pass
+        return False
+
+
+def RecordBest(total):
+    path = BestPath()
+    previous, writable = ReadBest(path)
+    best = max(previous, total)
+    isNew = total > previous
+    saved = False
+    if isNew and writable:
+        saved = WriteBest(path, total)
+    return best, isNew, saved
+
+
+def BestLines(best, isNew, saved):
+    where = "ChainBest.txt next to the game" if not os.environ.get("CHAIN_BEST_FILE") else "the file named by CHAIN_BEST_FILE"
+    lines = [" Local best across completed runs: " + str(best) + (" (new)" if isNew else "")]
+    if isNew and saved:
+        lines.append(" Saved to " + where)
+    elif isNew:
+        lines.append(" Not saved: the best file could not be written (shown on this screen only)")
+    return lines
+
+
 def DailyRun():
     today = time.localtime()
     return today.tm_year * 10000 + today.tm_mon * 100 + today.tm_mday
@@ -1473,7 +1547,8 @@ def Run(args):
                     elif state.K >= len(RunQuotas):
                         state.Boards.append(board)
                         total = sum(b.Score for b in state.Boards)
-                        screen.Show(["", " RUN COMPLETE   all " + str(len(RunQuotas)) + " boards cleared", " Total score " + str(total), "", " Run code (replays this run):", " " + state.Code(), "", " Press any key for run " + str(NextRunNumber(state.Run)) + ", or q to quit."])
+                        bestLines = BestLines(*RecordBest(total))
+                        screen.Show(["", " RUN COMPLETE   all " + str(len(RunQuotas)) + " boards cleared", " Total score " + str(total)] + bestLines + ["", " Run code (replays this run):", " " + state.Code(), "", " Press any key for run " + str(NextRunNumber(state.Run)) + ", or q to quit."])
                         if keys.Read() in ("q", "esc"):
                             break
                         state = RunState(NextRunNumber(state.Run))
