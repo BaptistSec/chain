@@ -21,9 +21,9 @@ Three boards. You need to earn a quota of credits on each (8, 9, 10; one credit 
 
 Rendered from the real frames by `AnsiPng.py` (a small converter from terminal colour codes to an image).
 
-- `screenshots/board-start.png`: a fresh board with the aim preview.
-- `screenshots/one-shot-sequence.png`: five moments of one shot, with the rally message and the credits bar filling.
-- `screenshots/draft.png`: the upgrade pick screen (example state, not a real run score).
+- `screenshots/2-board-start.png`: a fresh board with the aim preview.
+- `screenshots/4-one-shot-sequence.png`: five moments of one shot, with the rally message and the credits bar filling.
+- `screenshots/3-draft.png`: the upgrade pick screen (example state, not a real run score).
 
 ## Tests
 
