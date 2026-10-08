@@ -1,9 +1,9 @@
 @echo off
-title CHAIN CH10 run
+title CHAIN CH12
 cd /d "%~dp0"
 set CHAIN_LAUNCHER=1
 set CHAINARGS=%*
-if "%~1"=="" set CHAINARGS=--run 1
+if "%~1"=="" set CHAINARGS=--menu
 mode con: cols=110 lines=50 >nul 2>nul
 where py >nul 2>nul
 if %errorlevel%==0 (
