@@ -855,6 +855,15 @@ Help = [
 ]
 
 
+def DailyRun():
+    today = time.localtime()
+    return today.tm_year * 10000 + today.tm_mon * 100 + today.tm_mday
+
+
+def DailyLabel():
+    return str(DailyRun())
+
+
 def TitleLines(screen, step, page):
     lines = [""] * 3
     for row in TitleArt:
@@ -870,7 +879,9 @@ def TitleLines(screen, step, page):
     if page == "help":
         lines.append(" " * 14 + "[any key] back")
     elif step >= len(Premise):
-        lines.append(" " * 14 + "[Enter] new run    [H] how to play    [Q] quit")
+        lines.append(" " * 14 + "[Enter] new run    [D] daily run (" + DailyLabel() + ")    [H] how to play    [Q] quit")
+        lines.append(" " * 14 + "Same local date, same starting boards. Share your run code to compare;")
+        lines.append(" " * 14 + "there is no online leaderboard.")
         lines.append(" " * 14 + "Continue a saved run:  --resume CODE")
     else:
         lines.append(" " * 14 + "[Enter] skip")
@@ -894,6 +905,8 @@ def TitleScreen(screen, keys):
             page = "title"
         elif key in ("enter", "return", " ", "space"):
             return random.SystemRandom().randint(1, MaxRunNumber)
+        elif key == "d":
+            return DailyRun()
         elif key == "h":
             page = "help"
         elif key in ("q", "esc"):
