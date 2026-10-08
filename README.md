@@ -40,6 +40,7 @@ All the `Chain*`, `Inert*`, `Pty*`, `Width*`, `Stale*` and `Mark*` scripts asser
 - Version CH13 (QA passed on its own checks: not exhaustive, no human play, no Windows console).
 - Ball physics: gravity pulls the ball down and every wall, peg, bumper, mirror and floor bounce costs it 10% of its speed, so a shot loses energy and ends instead of pinging forever.
 - Title screen with a short premise, a how to play page and a menu. Start it with `--menu` (Play.bat does).
+- Daily run: press D on the menu. The run number is today's local date, so the same date gives the same starting boards. Share your run code to compare; there is no online leaderboard. TitleTest13.py checks the menu.
 - Layout: every board gets 16 extra pegs in the lower rows so the bottom of the field is no longer empty.
 - Tests for this version are the *13 scripts (ChainTest13 and the others). The *10 and *12 test files are older versions kept from earlier pushes and will fail against CH13 on purpose, because codes carry the version.
 - Not AI-proof. Not tested by me: a real Windows console, a person playing a full run, colour by eye.
