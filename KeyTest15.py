@@ -14,7 +14,7 @@ def Check(name, cond):
         Fails.append(name)
 
 
-Chip = re.compile(r"\x1b\[1;30;43m(\[[^\]\x1b]+\])\x1b\[22;39;49m")
+Chip = re.compile(r"\x1b\[1;38;5;214m(\[[^\]\x1b]+\])\x1b\[22;39m")
 
 
 def Capture(screen, lines):
