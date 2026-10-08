@@ -1,0 +1,16 @@
+CHAIN CH14 (work in progress, builder-reported tests, not AI-proof)
+
+Keep ChainDemo.py, Play.bat and PlayText.bat together. Needs Python 3, standard library only.
+Linux or macOS: python3 ChainDemo.py --menu
+Windows: double-click Play.bat. Windows is untested.
+Window: at least 104 columns by 48 rows.
+
+GOAL: a run is three boards. On each board earn the credit quota (9, 10 and 10; one credit per target cleared) within 8 base shots (dock and heart bonus shots can add more). Aim the cannon, fire the ball, and clear yellow targets as it bounces through the pegs. Chains and rallies score more.
+
+KEYS: left/right (or a/d) aim. Space or Enter fires. 1 to 4 choose the ball (normal, Rebound, Blast, Second Chance). p preview. f fast on/off. r restart. n next. q quits and prints your run code.
+
+DOCK: a catch zone sweeps along the floor. If the ball falls into it you get a free shot and +400. Only the first 2 catches on a board pay.
+
+RUN CODES: the code printed on exit replays the run. Codes from older versions (CH13 and earlier) are rejected. Resume with --resume CODE.
+
+NOT TESTED: a real Windows console, a person playing a full run, colour by eye.
