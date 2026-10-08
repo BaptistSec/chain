@@ -15,7 +15,7 @@ else:
     import termios
     import tty
 
-Version = "CH12"
+Version = "CH13"
 PegCap = 64
 PegGap = 2
 Width = 100
@@ -23,6 +23,9 @@ Height = 38
 CannonX = 50
 ShotLimit = 10
 StepCap = 3600
+LowerPegs = 16
+LowerTop = 25
+LowerRows = 8
 WallDrift = 12
 BlastRadius = 5
 KindNames = {"n": "normal", "r": "rebound", "x": "blast", "s": "second chance"}
@@ -244,6 +247,7 @@ class Board:
             self.Grid = {}
             self.GenerateScatter()
             self.Style = "scatter"
+            self.FillLower(rng)
             return
         self.Style = LayoutNames[style] + (" mirrored" if mirror else "")
         loose.sort()
@@ -269,6 +273,20 @@ class Board:
                         if near not in self.Grid and 1 <= near[0] <= Width - 2 and 4 <= near[1] <= Height - 5:
                             self.Grid[near] = "B"
                             break
+        self.FillLower(rng)
+
+    def FillLower(self, rng):
+        placed = 0
+        tries = 0
+        while placed < LowerPegs and tries < 400:
+            tries += 1
+            x = 3 + rng.Below(Width - 6)
+            y = LowerTop + rng.Below(LowerRows)
+            cell = (x, y)
+            if cell in self.Grid or any(near in self.Grid for near in Around8(x, y)):
+                continue
+            self.Grid[cell] = "o"
+            placed += 1
 
     def Place(self, rng, symbol, count, clusterMax):
         placed = 0
