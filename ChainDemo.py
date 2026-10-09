@@ -16,30 +16,32 @@ else:
     import termios
     import tty
 
-Version = "CH15"
-PegCap = 64
+Version = "CH16"
+PegCap = 40
 PegGap = 2
-Width = 100
+Width = 50
+CellCols = 2
 Height = 38
-CannonX = 50
+CannonX = 25
 ShotLimit = 8
-DockHalf = 7
+DockHalf = 3
 DockSpan = Width - 1 - 2 * DockHalf
 CatchPoints = 400
 DockCap = 2
 DockPhase = 37
 StepCap = 3600
-LowerPegs = 16
+LowerPegs = 10
 LowerTop = 25
 LowerRows = 8
 WallDrift = 12
-BlastRadius = 5
+BlastRadius = 3
 KindNames = {"n": "normal", "r": "rebound", "x": "blast", "s": "second chance"}
 GravityEvery = 4
 Damping = 9
 Stall = 12
 BounceDrift = 7
 TargetCount = 12
+TargetFloor = 6
 GroupSize = 3
 CascadeCap = 5
 PreviewSteps = 70
@@ -149,20 +151,20 @@ def LayoutLines(style, rng):
     lines = []
     if style == 0:
         for k in range(2):
-            cx = 22 + 56 * k + rng.Below(7) - 3
+            cx = 11 + 28 * k + rng.Below(5) - 2
             cy = 12 + rng.Below(12)
             h = 3 + rng.Below(4)
-            w = 2 * h + 2
+            w = h + 2
             lines.append(Path([(cx - w, cy), (cx, cy - h), (cx + w, cy), (cx, cy + h), (cx - w, cy)]))
     elif style == 1:
         for row in range(2):
             y = 11 + row * 11 + rng.Below(2)
             amp = 2 + rng.Below(3)
-            period = 12 + rng.Below(8)
+            period = 6 + rng.Below(4)
             points = []
-            x = 3 + rng.Below(4)
+            x = 2 + rng.Below(3)
             up = row % 2 == 0
-            while x < Width - 3:
+            while x < Width - 2:
                 points.append((x, y - amp if up else y + amp))
                 up = not up
                 x += period
@@ -170,19 +172,19 @@ def LayoutLines(style, rng):
     elif style == 2:
         for k in range(4):
             top = 6 + 6 * k
-            inset = 6 + 8 * k
-            lines.append(Path([(inset, top), (Width // 2 - 1, top + 9), (Width - 1 - inset, top)]))
+            inset = 3 + 4 * k
+            lines.append(Path([(inset, top), (Width // 2 - 1, top + 6), (Width - 1 - inset, top)]))
     elif style == 3:
         for k in range(3):
-            cx = 20 + 30 * k
+            cx = 10 + 15 * k
             y = 24 - 2 * rng.Below(3)
             h = 9 + rng.Below(3)
-            lines.append(Path([(cx - 12, y), (cx - 9, y - h + 3), (cx - 5, y - h), (cx + 5, y - h), (cx + 9, y - h + 3), (cx + 12, y)]))
+            lines.append(Path([(cx - 6, y), (cx - 5, y - h + 3), (cx - 3, y - h), (cx + 3, y - h), (cx + 5, y - h + 3), (cx + 6, y)]))
     else:
-        for cx, cy in ((24, 15), (Width - 25, 15)):
-            w = 9 + rng.Below(4)
+        for cx, cy in ((12, 15), (Width - 13, 15)):
+            w = 5 + rng.Below(2)
             h = 4 + rng.Below(2)
-            lines.append(Path([(cx - w, cy - h + 2), (cx - w + 4, cy - h), (cx + w - 4, cy - h), (cx + w, cy - h + 2), (cx + w, cy + h - 2), (cx + w - 4, cy + h), (cx - w + 4, cy + h), (cx - w, cy + h - 2), (cx - w, cy - h + 2)]))
+            lines.append(Path([(cx - w, cy - h + 2), (cx - w + 2, cy - h), (cx + w - 2, cy - h), (cx + w, cy - h + 2), (cx + w, cy + h - 2), (cx + w - 2, cy + h), (cx - w + 2, cy + h), (cx - w, cy + h - 2), (cx - w, cy - h + 2)]))
     return lines
 
 
@@ -221,12 +223,12 @@ class Board:
     def GenerateScatter(self):
         rng = Rng(self.Seed)
         self.Place(rng, "#", TargetCount, 1)
-        self.Place(rng, "B", 5, 2)
+        self.Place(rng, "B", 4, 2)
         self.Place(rng, "F", 3, 1)
         self.Place(rng, "*", 5, 1)
         self.Place(rng, "/", 2, 1)
         self.Place(rng, "\\", 2, 1)
-        self.Place(rng, "o", 14, 1)
+        self.Place(rng, "o", 8, 1)
 
     def Generate(self):
         rng = Rng(self.Seed)
@@ -241,7 +243,7 @@ class Board:
             lines = both
         loose = []
         span = sum(1 for line in lines for c in line if 1 <= c[0] <= Width - 2 and 4 <= c[1] <= Height - 5)
-        gap = 2 if span <= 150 else 3
+        gap = 2 if span <= 80 else 3
         rows = []
         for line in lines:
             cells = [c for c in line if 1 <= c[0] <= Width - 2 and 4 <= c[1] <= Height - 5]
@@ -258,7 +260,7 @@ class Board:
                     loose.append(cell)
                     row.append(cell)
                 index += gap
-        if len(loose) < 32:
+        if len(loose) < 20:
             self.Grid = {}
             self.GenerateScatter()
             self.Style = "scatter"
@@ -269,11 +271,11 @@ class Board:
         need = TargetCount
         placed = []
         pool = [c for row in rows for c in row if c in loose]
-        floor = 12
+        floor = TargetFloor
         while need > 0 and pool and floor >= 0:
             far = [c for c in pool if all(abs(c[0] - p[0]) + abs(c[1] - p[1]) >= floor for p in placed)]
             if not far:
-                floor -= 2
+                floor -= 1
                 continue
             cell = far[rng.Below(len(far))]
             pool.remove(cell)
@@ -798,6 +800,8 @@ TrailColours = ["38;5;252", "38;5;248", "38;5;245", "38;5;242", "38;5;240", "38;
 BurstGlyphs = {3: ("*", "1;38;5;226"), 2: ("+", "38;5;208"), 1: (".", "38;5;124")}
 UnicodeGlyphs = {"o": "\u25cf", "+": "\u25c6", "#": "\u2593", "*": "\u25c9", "B": "\u00a4", "F": "\u2665", "/": "\u2571", "\\": "\u2572", "@": "\u25cf", ".": "\u00b7", ":": "\u2022"}
 BumperGlyphs = ["\u25c9", "\u25ce", "\u25cb"]
+UnicodeWide = {"\u25cf": "\u25cf\u25cf", "\u25c6": "\u25e2\u25e3", "\u2593": "\u2593\u2593", "\u25c9": "\u25c9\u25c9", "\u25ce": "\u25ce\u25ce", "\u25cb": "\u25cb\u25cb", "\u00a4": "\u00a4\u00a4", "\u2665": "\u2665\u2665", "\u2571": "\u2571\u2571", "\u2572": "\u2572\u2572", "\u00b7": "\u00b7\u00b7", "\u2022": "\u2022\u2022"}
+PlainWide = {"o": "()", "+": "<>", "#": "[]", "@": "()"}
 
 
 def EnableAnsi():
@@ -1046,6 +1050,12 @@ class Screen:
             return BumperGlyphs[min(hits, 2)]
         return UnicodeGlyphs.get(symbol, symbol)
 
+    def Wide(self, glyph, ball=False):
+        if ball and not self.Plain:
+            return "\u25d6\u25d7"
+        table = PlainWide if self.Plain else UnicodeWide
+        return table.get(glyph, glyph * CellCols)
+
     def Paint(self, key, text, tail=""):
         if self.Mono:
             return text
@@ -1092,7 +1102,7 @@ class Screen:
         quota = getattr(board, "Quota", board.Total)
         done = min(max(quota - board.TargetsLeft(), 0), quota)
         title = " CHAIN  board " + str(board.Seed) + ("  (" + board.Style + ")" if board.Style else "") + "  " + Version + " "
-        lines = [self.Paint("title", title.ljust(Width + 2))]
+        lines = [self.Paint("title", title.ljust(Width * CellCols + 2))]
         def Status(extra):
             text = " Shots " + self.Bar(left, total, "o")
             bar = self.Bar(done, quota, "#")
@@ -1110,10 +1120,10 @@ class Screen:
         self.Mono = True
         longest = len(Status(True))
         self.Mono = saved
-        status = Status(longest <= Width)
+        status = Status(longest <= Width * CellCols)
         lines.append(status)
         corners = ("+", "+", "+", "+", "-", "|") if self.Plain else ("\u250c", "\u2510", "\u2514", "\u2518", "\u2500", "\u2502")
-        lines.append(shake + corners[0] + corners[4] * Width + corners[1])
+        lines.append(shake + corners[0] + corners[4] * (Width * CellCols) + corners[1])
         cannon = self.Cannon(aim)
         trailIndex = {c: n for n, c in enumerate(reversed(trail))}
         for y in range(Height):
@@ -1123,23 +1133,23 @@ class Screen:
                 cell = (x, y)
                 symbol = board.Grid.get(cell)
                 if ball is not None and ball == cell:
-                    tokens.append((Colours["@"], self.Glyph("@")))
+                    tokens.append((Colours["@"], self.Wide(self.Glyph("@"), True)))
                 elif cell in flash:
                     key = "pop" if flash[cell][1] == "pop" else "fall"
-                    tokens.append((Colours[key], self.Glyph(flash[cell][0])))
+                    tokens.append((Colours[key], self.Wide(self.Glyph(flash[cell][0]))))
                 elif cell in burst:
                     glyph, code = BurstGlyphs[burst[cell]]
-                    tokens.append((code, glyph))
+                    tokens.append((code, glyph * CellCols))
                 elif symbol is not None:
-                    tokens.append((Colours[symbol], self.Glyph(symbol, board.Bumps.get(cell, 0))))
+                    tokens.append((Colours[symbol], self.Wide(self.Glyph(symbol, board.Bumps.get(cell, 0)))))
                 elif y == 0 and abs(x - CannonX) <= 1:
-                    tokens.append((Colours["V"], ("[", cannon, "]")[x - CannonX + 1]))
+                    tokens.append((Colours["V"], ("[ ", cannon + " ", " ]")[x - CannonX + 1]))
                 elif cell in trailIndex:
-                    tokens.append((TrailColours[min(trailIndex[cell], len(TrailColours) - 1)], self.Glyph(":")))
+                    tokens.append((TrailColours[min(trailIndex[cell], len(TrailColours) - 1)], self.Wide(self.Glyph(":"))))
                 elif cell in dots:
-                    tokens.append((Colours["."], self.Glyph(".")))
+                    tokens.append((Colours["."], self.Wide(self.Glyph("."))))
                 else:
-                    tokens.append((None, " "))
+                    tokens.append((None, " " * CellCols))
             if self.Mono:
                 row = "".join(char for _, char in tokens)
             else:
@@ -1161,9 +1171,9 @@ class Screen:
         left = max(0, dockAt - DockHalf)
         right = min(Width - 1, dockAt + DockHalf)
         glyph = "=" if self.Plain else "\u2550"
-        segment = glyph * (right - left + 1)
+        segment = glyph * ((right - left + 1) * CellCols)
         segment = self.Paint("dockhit" if fx.get("dockhit") else "dock", segment)
-        lines.append(shake + corners[2] + corners[4] * left + segment + corners[4] * (Width - 1 - right) + corners[3])
+        lines.append(shake + corners[2] + corners[4] * (left * CellCols) + segment + corners[4] * ((Width - 1 - right) * CellCols) + corners[3])
         legend = " " + self.Paint("o", self.Glyph("o")) + " " + self.Paint("+", self.Glyph("+")) + " loose   " + self.Paint("#", self.Glyph("#")) + " target   "
         legend += self.Paint("*", self.Glyph("*")) + (" bumper (3 hits)   " if self.Plain else " bumper (3 hits)   ") + self.Paint("B", self.Glyph("B")) + " bomb   "
         legend += self.Paint("dock", glyph if False else ("=" if self.Plain else "\u2550")) + " dock (catch)   " + self.Paint("F", self.Glyph("F")) + " free shot   " + self.Paint("/", self.Glyph("/")) + " " + self.Paint("\\", self.Glyph("\\")) + " mirror"
@@ -1193,7 +1203,7 @@ class Screen:
         else:
             controls = " [<][>] aim " + str(aim + 1) + "/" + str(len(Directions)) + " " + str(AimDegrees(aim)) + "deg  [Space] fire  [P] preview " + ("on" if preview else "off") + "  [F] fast " + ("on" if self.Fast else "off") + ("  [R] restart  [N] next  [Q] quit" if getattr(board, "RunInfo", None) is not None else "  [R] redo  [N] next  [Q] quit")
         lines.append(controls)
-        text = message[:Width]
+        text = message[:Width * CellCols]
         if not self.Mono and not self.Watching:
             if text.startswith("RALLY x"):
                 bold = "1;" if text[7:8] in ("4", "5") else ""
@@ -1434,7 +1444,7 @@ def ParseRunCode(code):
     if len(code) > MaxCodeLength:
         raise ValueError("Run code is too long")
     parts = code.strip().split("-")
-    if parts and parts[0] in ("CH12R", "CH13R", "CH14R"):
+    if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R"):
         raise ValueError("Saved " + parts[0][:-1] + " run codes are no longer valid in " + Version + ". Start a new run.")
     if len(parts) != 5 or parts[0] != Version + "R":
         raise ValueError("Unknown run code version or wrong number of parts")
@@ -1520,7 +1530,7 @@ def DraftScreen(screen, keys, state, board):
 
 def Run(args):
     size = shutil.get_terminal_size((80, 24))
-    needCols = Width + 4
+    needCols = Width * CellCols + 4
     needRows = Height + 10
     if size.columns < needCols or size.lines < needRows:
         print("Window too small: needs at least " + str(needCols) + " columns and " + str(needRows) + " rows, has " + str(size.columns) + " by " + str(size.lines) + ". Enlarge the window and start again.")
@@ -1718,7 +1728,8 @@ def BlastCheck():
     for first in "#F":
         board = Board.__new__(Board)
         board.Seed = 1
-        board.Grid = {(50, 10): first, (52, 10): "o", (54, 10): "*", (53, 11): "/", (50, 15): "#", (60, 10): "o"}
+        board.DockPaid = DockCap
+        board.Grid = {(25, 10): first, (26, 10): "o", (28, 10): "*", (27, 11): "/", (25, 13): "#", (35, 10): "o"}
         board.Bumps = {}
         board.Extra = 0
         board.Stock = {"r": 2, "x": 2}
@@ -1732,9 +1743,9 @@ def BlastCheck():
         wantBonus = 1 if first == "F" else 0
         if shot.Targets != wantTargets or shot.Bonus != wantBonus:
             problems += 1
-        if board.Grid.get((54, 10)) != "*" or board.Grid.get((53, 11)) != "/" or (60, 10) not in board.Grid:
+        if board.Grid.get((28, 10)) != "*" or board.Grid.get((27, 11)) != "/" or (35, 10) not in board.Grid:
             problems += 1
-        if (52, 10) in board.Grid:
+        if (26, 10) in board.Grid:
             problems += 1
     return problems
 
