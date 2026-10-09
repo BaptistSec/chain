@@ -7,8 +7,8 @@ Fails = []
 def Check(ok, text):
     print(("ok   " if ok else "FAIL ") + text)
     if not ok: Fails.append(text)
-# Replay digest pinned from the CH17 engine (ChainDemo.py d085eb06...) over the same plays.
-CH17Digest = "e9f3620ca1c69f75256cb231c67842cff739f578ffeca5bf233bed3945a7e494"
+# Replay digest pinned from the CH18 engine over the same plays (CH17 value was e9f3620c...; layouts changed in CH18, so it moved).
+CH17Digest = "e7cc97ad1f1f1753b16cc4a22ca01ff4ff217846d8449180f05569d319d97400"
 Limit = E.Width * E.CellCols
 digest = hashlib.sha256()
 worst = 0; shots = 0; reward = 0; kinds = {}; bad = []; levels = {l: 0 for l in range(6)}
@@ -41,7 +41,7 @@ Check(not bad, "every message fits %d columns and keeps score, rally and reward 
 if bad: print("first bad:", bad[0])
 got = digest.hexdigest()
 print("replay digest", got)
-Check(CH17Digest == "PINNED" or got == CH17Digest, "engine replay hashes identical to CH17 on seeds 30001..30300")
+Check(CH17Digest == "PINNED" or got == CH17Digest, "engine replay hashes identical to the CH18 pin on seeds 30001..30300")
 # meter flash: draw only, same visible text with and without the flash, no colour in Mono
 import re
 def Strip(x): return re.sub("\x1b\\[[0-9;]*[A-Za-z]", "", x)

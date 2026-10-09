@@ -70,7 +70,7 @@ if __name__ == "__main__":
         print("resume of finished run shows RUN COMPLETE:", "RUN COMPLETE" in txt4)
         if "Board 2/3" not in txt2 or "RUN COMPLETE" not in txt4:
             sys.exit(1)
-        txt3 = Drive(["--resume", "CH17R-1-9.10.10-q-1/2"], ["w"])
+        txt3 = Drive(["--resume", "CH18R-1-9.10.10-q-1/2"], ["w"])
         print("bad-resume rejected:", "bad run code" in txt3)
         sys.exit()
     Fails = []
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     mid = "-".join(full[:3]) + "-" + full[3][:1] + "-" + "/".join(full[4].split("/")[:2])
     txt2 = Drive(["--resume", mid], ["w", "w"])
     Expect("Board 2/3" in txt2, "resume mid-run shows board 2")
-    txt3 = Drive(["--resume", "CH17R-1-9.10.10-q-1/2"], ["w"])
+    txt3 = Drive(["--resume", "CH18R-1-9.10.10-q-1/2"], ["w"])
     Expect("bad run code" in txt3 or "error" in txt3.lower(), "bad resume rejected")
     txt5 = Drive(["--text", "--resume", mid], ["w"])
     Expect("cannot be combined" in txt5, "text plus resume rejected")
@@ -104,7 +104,7 @@ if __name__ == "__main__":
     Expect("Window too small" in small, "small window message")
     quitdraft = Drive(["--run", "1"] if False else ["--run", str(run)], [k for k in keys[:keys.index("n") + 1]] + ["w", "w", "q", "w"])
     Expect("Pick one upgrade" in quitdraft or "BOARD 1 CLEARED" in quitdraft, "reached draft or clear screen before quit test")
-    Expect("Run code (continue later" in quitdraft or "CH17R-" in quitdraft, "q on draft quits and prints code")
+    Expect("Run code (continue later" in quitdraft or "CH18R-" in quitdraft, "q on draft quits and prints code")
     restart = Drive(["--run", "1"], ["w", "r", "w", "w"])
     Expect("restarted" in restart, "restart message shown")
     if Fails:

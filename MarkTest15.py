@@ -17,7 +17,7 @@ for name, kw in (("mono", {"Mono": True}), ("reduced", {"Reduced": True}), ("fas
     Check(not E.ScoreMarkWanted(S(**kw), 5000), "no mark in " + name)
 sys.argv = ["x"]
 exec(open(os.path.join(Here, "ChainTest15.py")).read().split("bad = collections.Counter()")[0])
-rng = random.Random(1); b = E.RunBoard(27, 1, {"r": 1, "x": 1})
+rng = random.Random(1); b = E.RunBoard(9, 1, {"r": 1, "x": 1})
 steps = []; aim = E.DefaultAim; pts = []
 for _ in range(3):
     left = E.ShotLimit + b.Extra - len(b.Log); a, h = Policy(b, rng); k = Kind(b, h, left); sh = b.Play(a, None, k)
@@ -30,7 +30,7 @@ Esc = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]")
 def Drive(args, plan):
     pid, fd = pty.fork()
     if pid == 0:
-        os.chdir(Here); os.execvp("python3", ["python3", "ChainDemo.py", "--run", "27"] + args)
+        os.chdir(Here); os.execvp("python3", ["python3", "ChainDemo.py", "--run", "9"] + args)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 110, 0, 0))
     buf = b""; marks = []
     def Pump(t):
@@ -75,7 +75,7 @@ Check(not any(Drive(["--delay", "2", "--reduced"], Plan([], 4.0))), "reduced: ne
 Check(not any(Drive(["--delay", "0"], Plan([], 1.0))), "delay 0: never marked")
 Check(not any(Drive(["--delay", "2"], Plan(["f"], 3.0))), "fast key: never marked")
 spAim = None
-sim = E.RunBoard(27, 1, {"r": 1, "x": 1}); simRng = random.Random(1)
+sim = E.RunBoard(9, 1, {"r": 1, "x": 1}); simRng = random.Random(1)
 for _ in range(2):
     left = E.ShotLimit + sim.Extra - len(sim.Log); a2, h2 = Policy(sim, simRng); k2 = Kind(sim, h2, left); sim.Play(a2, None, k2); spAim = a2
 repeat = sim.Play(spAim, None, "n")

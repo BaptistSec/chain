@@ -57,16 +57,16 @@ b = C.RunBoard(20261008, 1, {"r": 1, "x": 1})
 ra = [(a.Play(k, None, "n").Points, a.Extra, a.Hash()) for k in (5, 20, 33)]
 rb = [(b.Play(k, None, "n").Points, b.Extra, b.Hash()) for k in (5, 20, 33)]
 Check("shots are deterministic with the dock", ra == rb)
-code = "CH17R-20261008-9.10.10-00-11x.5r/1.2.3/4.5"
+code = "CH18R-20261008-9.10.10-00-11x.5r/1.2.3/4.5"
 try:
     C.ParseRunCode(code)
-    Check("CH17 run code parses", True)
+    Check("CH18 run code parses", True)
 except ValueError:
-    Check("CH17 run code parses", False)
+    Check("CH18 run code parses", False)
 try:
-    C.ParseRunCode(code.replace("CH17", "CH16"))
-    Check("CH16 code rejected by CH17", False)
+    C.ParseRunCode(code.replace("CH18", "CH17"))
+    Check("CH17 code rejected by CH18", False)
 except ValueError:
-    Check("CH16 code rejected by CH17", True)
+    Check("CH17 code rejected by CH18", True)
 print("FAILS", len(Fails))
 sys.exit(1 if Fails else 0)

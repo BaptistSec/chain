@@ -16,7 +16,7 @@ else:
     import termios
     import tty
 
-Version = "CH17"
+Version = "CH18"
 PegCap = 40
 PegGap = 2
 Width = 50
@@ -97,7 +97,7 @@ class Shot:
         self.FloorX = -1
 
 
-LayoutNames = ["diamonds", "waves", "chevrons", "arches", "rings"]
+LayoutNames = ["diamonds", "waves", "chevrons", "arches", "rings", "spiral", "funnel", "stairs"]
 
 
 def DockX(step):
@@ -182,6 +182,35 @@ def LayoutLines(style, rng):
             y = 24 - 2 * rng.Below(3)
             h = 9 + rng.Below(3)
             lines.append(Path([(cx - 6, y), (cx - 5, y - h + 3), (cx - 3, y - h), (cx + 3, y - h), (cx + 5, y - h + 3), (cx + 6, y)]))
+    elif style == 5:
+        top = 7 + rng.Below(3)
+        side = 4 + rng.Below(3)
+        bottom = 21 + rng.Below(3)
+        inner = 13 + rng.Below(2)
+        lines.append(Path([(side, top), (Width - 1 - side, top), (Width - 1 - side, bottom), (side + 6, bottom), (side + 6, inner), (Width - 1 - side - 9, inner)]))
+        if rng.Below(2):
+            lines = [[(Width - 1 - x, y) for x, y in line] for line in lines]
+    elif style == 6:
+        top = 6 + rng.Below(3)
+        across = 15 + rng.Below(2)
+        down = 21 + rng.Below(2)
+        lines.append(Path([(3, top), (3 + across, top + down)]))
+        lines.append(Path([(Width - 4, top), (Width - 4 - across, top + down)]))
+        lines.append(Path([(Width // 2 - 4, top + down + 2), (Width // 2 + 3, top + down + 2)]))
+    elif style == 7:
+        for k in range(2):
+            y = 6 + 3 * k + rng.Below(2)
+            x = 3
+            points = [(x, y)]
+            for step in range(4):
+                x += 9 + rng.Below(3)
+                points.append((x, y))
+                y += 5
+                points.append((x, y))
+            points.append((min(Width - 4, x + 5), y))
+            if k:
+                points = [(Width - 1 - px, py) for px, py in points]
+            lines.append(Path(points))
     else:
         for cx, cy in ((12, 15), (Width - 13, 15)):
             w = 5 + rng.Below(2)
@@ -1541,7 +1570,7 @@ def ParseRunCode(code):
     if len(code) > MaxCodeLength:
         raise ValueError("Run code is too long")
     parts = code.strip().split("-")
-    if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R"):
+    if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R", "CH17R"):
         raise ValueError("Saved " + parts[0][:-1] + " run codes are no longer valid in " + Version + ". Start a new run.")
     if len(parts) != 5 or parts[0] != Version + "R":
         raise ValueError("Unknown run code version or wrong number of parts")
