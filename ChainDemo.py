@@ -1215,7 +1215,7 @@ class Screen:
         else:
             options = [("n", "[1] normal"), ("r", "[2] rebound x" + str(board.Stock["r"])), ("x", "[3] blast x" + str(board.Stock["x"])), ("s", "[4] second chance x" + str(board.Stock.get("s", 0)))]
             parts = [self.Paint("good", text) if kind == self.Kind else text for kind, text in options]
-            lines.append(" Ball  " + "  ".join(parts) + "  Overdrive [" + "#" * board.Meter + "-" * (OverdriveNeed - board.Meter) + "]" + (" +1" if board.OverGiven else ""))
+            lines.append(" Ball  " + "  ".join(parts) + "  " + self.Paint("dockhit" if fx.get("meter") else "good" if board.OverGiven else "", "Overdrive [" + "#" * board.Meter + "-" * (OverdriveNeed - board.Meter) + "]" + (" +1" if board.OverGiven else "")))
         info = getattr(board, "RunInfo", None)
         if info is not None and not self.Watching:
             nxt = "  ".join(KindNames[c] + " x" + str(info.Satchel.get(c, 0)) for c in RunPool if info.Satchel.get(c, 0))
@@ -1259,29 +1259,54 @@ class Screen:
         Stats["Frames"] += 1
 
 
-def ShotMessage(board, shot):
+def ShotMessage(board, shot, limit=Width * CellCols):
+    # Lowest priority detail is dropped first, so the score, rally and any reward text always stay whole.
+    for level in range(6):
+        text = ShotText(board, shot, level)
+        if len(text) <= limit:
+            return text
+    return text
+
+
+def ShotText(board, shot, level):
     text = "Shot " + str(len(board.Log)) + ": +" + str(shot.Points)
     if shot.Rally > 1:
         text += " (rally x" + str(shot.Rally) + ")"
     if shot.Mult > 1:
-        text += " (streak x" + str(shot.Mult) + ")"
-    if shot.Paid:
-        text += ", caught in the dock +" + str(CatchPoints)
+        text += (" (streak x" if level < 4 else " (x") + str(shot.Mult) + ")"
+    if level >= 5:
+        pass
+    elif shot.Paid:
+        text += ", caught in the dock +" + str(CatchPoints) if level < 3 else ", dock +" + str(CatchPoints)
     elif shot.Caught:
-        text += ", dock used up, no bonus"
+        text += ", dock used up, no bonus" if level < 3 else ", dock used up"
     if shot.Bonus:
-        text += ", +" + str(shot.Bonus) + " free shot"
+        text += ", +" + str(shot.Bonus) + (" free shot" if level < 4 else " shot")
     if shot.Overdrive:
         text += ", OVERDRIVE: +1 rebound ball"
-    if shot.Kind != "n":
+    if shot.Kind != "n" and not (shot.Kind == "s" and level >= 2) and level < 3:
         text += ", " + KindNames[shot.Kind] + " ball"
     if shot.Kind == "s":
-        if shot.Refund:
+        if level >= 5:
+            text += " | Second Chance: " + ("refunded" if shot.Refund else "no refund")
+        elif level >= 2:
+            text += " | Second Chance: " + (str(shot.Targets) + (" target" if shot.Targets == 1 else " targets") + ", refunded" if shot.Refund else "2+ targets, no refund")
+        elif shot.Refund:
             text += " | Second Chance: " + str(shot.Targets) + (" target" if shot.Targets == 1 else " targets") + " cleared, shot refunded"
         else:
             text += " | Second Chance: 2+ targets, no refund"
-    text += " - " + str(shot.Pegs) + " pegs, " + str(shot.Targets) + " targets, chain " + str(shot.Chain) + ", settle " + str(shot.Cascade) + " cascades (" + str(shot.SettlePops) + " pegs)"
-    return text
+    tail = " - " + str(shot.Pegs) + " pegs, " + str(shot.Targets) + " targets, chain " + str(shot.Chain)
+    if level == 0:
+        tail += ", settle " + str(shot.Cascade) + " cascades (" + str(shot.SettlePops) + " pegs)"
+    elif level == 1:
+        tail += ", settle " + str(shot.Cascade)
+    elif level == 3:
+        tail = " - " + str(shot.Targets) + " targets, chain " + str(shot.Chain)
+    elif level == 4:
+        tail = " - " + str(shot.Targets) + " targets"
+    else:
+        tail = ""
+    return text + tail
 
 
 def Animate(screen, board, aim, kind="n"):
@@ -1403,6 +1428,12 @@ def Animate(screen, board, aim, kind="n"):
             screen.Show(screen.Frame(board, aim, False, None, "CAUGHT in the dock  +" + str(CatchPoints) + "  free shot", False, fx))
             time.sleep(min(0.03, BeatCap / 4))
         fx["dockhit"] = False
+    if shot.Overdrive and not (screen.Fast or screen.Reduced or screen.Mono or screen.Delay <= 0 or fx.get("skip") or screen.Watching):
+        for beat in range(4):
+            fx["meter"] = beat % 2 == 0
+            screen.Show(screen.Frame(board, aim, False, None, "OVERDRIVE  +1 rebound ball", False, fx))
+            time.sleep(min(0.03, BeatCap / 4))
+        fx["meter"] = False
     screen.LastSkipped = bool(fx.get("skip"))
     shot.Added = feel.get("added", 0.0)
     shot.Beats = feel.get("rally", 1)
