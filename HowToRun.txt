@@ -1,4 +1,4 @@
-CHAIN CH14 (work in progress, builder-reported tests, not AI-proof)
+CHAIN CH15 (work in progress, builder-reported tests, not AI-proof)
 
 Keep ChainDemo.py, Play.bat and PlayText.bat together. Needs Python 3, standard library only.
 Linux or macOS: python3 ChainDemo.py --menu
@@ -11,6 +11,6 @@ KEYS: left/right (or a/d) aim. Space or Enter fires. 1 to 4 choose the ball (nor
 
 DOCK: a catch zone sweeps along the floor. If the ball falls into it you get a free shot and +400. Only the first 2 catches on a board pay.
 
-RUN CODES: the code printed on exit replays the run. Codes from older versions (CH13 and earlier) are rejected. Resume with --resume CODE.
+RUN CODES: the code printed on exit replays the run. Codes from older versions (CH14 and earlier) are rejected. Resume with --resume CODE.
 
 NOT TESTED: a real Windows console, a person playing a full run, colour by eye.

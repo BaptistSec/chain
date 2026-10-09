@@ -4,7 +4,7 @@ src = open(__import__("os").path.join(__import__("os").path.dirname(__import__("
 src = src.replace('return re.sub(rb"\\x1b\\[[0-9;?]*[A-Za-z]", b"\\n", buf).decode("utf8", "replace")', 'return buf')
 exec(src)
 Fails = []
-code = "CH14R-30001-9.10.10-rr-1x.36r/36x.10.32/23x.5r.1r"
+code = "CH15R-30001-9.10.10-xr-34.30.5x.2r.31/22.9x.38x.7.0r.18.3.3.34.36.11/17x.30.11.10x.33r.38r"
 b = Drive(["--resume", code], ["w", "w", "n", "w"])
 i = b.find(b"RUN COMPLETE"); j = b.find(b"\x1b[H", i)
 if not (i > 0 and b"\x1b[J" in b[i:(j if j > 0 else None)][-30:]):

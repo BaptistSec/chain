@@ -2,7 +2,7 @@
 
 A terminal game in Python. Aim a cannon, fire a ball into a board of pegs and targets, and clear every board in a run. Python 3 standard library only.
 
-**Status: work in progress.** Version CH14. Everything below is builder-reported from my own automated tests. Not AI-proof. Not tested: a real Windows console, a person playing a full run, colour by a human eye.
+**Status: work in progress.** Version CH15.  CH15 spreads the 12 targets across the board instead of in clusters. Everything below is builder-reported from my own automated tests. Not AI-proof. Not tested: a real Windows console, a person playing a full run, colour by a human eye.
 
 ## Run it
 
@@ -13,11 +13,8 @@ The terminal needs at least 104 columns by 48 rows. `HowToRun.txt` has the keys 
 
 ## What a run is
 
-Three boards. Earn the credit quota on each (9, 10, 10; one credit per target cleared) within 8 base shots (dock and heart bonus shots can add more). A dock sweeps the floor: land the ball in it for a free shot and +400 (first 2 catches per board). Press D on the menu for the daily run. The run code printed on exit replays the whole run; codes from CH13 and earlier no longer work.
+Three boards. Earn the credit quota on each (9, 10, 10; one credit per target cleared) within 8 base shots (dock and heart bonus shots can add more). A dock sweeps the floor: land the ball in it for a free shot and +400 (first 2 catches per board). Press D on the menu for the daily run. The run code printed on exit replays the whole run; codes from CH14 and earlier no longer work.
 
-![CHAIN CH14 board](screenshots/board-ch14.png)
-
-The picture is the game's own frame rendered to an image, not a live terminal capture.
 
 ## Tests
 

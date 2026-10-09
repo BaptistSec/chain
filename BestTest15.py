@@ -66,7 +66,7 @@ os.environ["CHAIN_BEST_FILE"] = os.path.join(tmp, "pty.txt")
 src = open(os.path.join(Here, "PtyDrive15.py")).read().split('if __name__ == "__main__":')[0]
 src = src.replace('return re.sub(rb"\\x1b\\[[0-9;?]*[A-Za-z]", b"\\n", buf).decode("utf8", "replace")', 'return buf')
 exec(src)
-code = "CH14R-30001-9.10.10-rr-1x.36r/36x.10.32/23x.5r.1r"
+code = "CH15R-30001-9.10.10-xr-34.30.5x.2r.31/22.9x.38x.7.0r.18.3.3.34.36.11/17x.30.11.10x.33r.38r"
 b = Drive(["--resume", code], ["w", "w", "n", "w"]).decode("utf8", "replace")
 Check("RUN COMPLETE" in b and "Local best across completed runs" in b and "Saved to" in b, "first complete run shows personal best and says new best")
 Check(os.path.exists(os.environ["CHAIN_BEST_FILE"]) and int(open(os.environ["CHAIN_BEST_FILE"]).read().strip()) > 0, "file written with the run total")

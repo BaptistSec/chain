@@ -16,7 +16,7 @@ else:
     import termios
     import tty
 
-Version = "CH14"
+Version = "CH15"
 PegCap = 64
 PegGap = 2
 Width = 100
@@ -267,16 +267,20 @@ class Board:
         self.Style = LayoutNames[style] + (" mirrored" if mirror else "")
         loose.sort()
         need = TargetCount
-        order = [r for r in rows if len(r) >= 3]
-        while need > 0 and order:
-            row = order.pop(rng.Below(len(order)))
-            size = min(need, 3 + rng.Below(2), len(row))
-            start = rng.Below(len(row) - size + 1)
-            for cell in row[start:start + size]:
-                if cell in loose:
-                    loose.remove(cell)
-                    self.Grid[cell] = "#"
-                    need -= 1
+        placed = []
+        pool = [c for row in rows for c in row if c in loose]
+        floor = 12
+        while need > 0 and pool and floor >= 0:
+            far = [c for c in pool if all(abs(c[0] - p[0]) + abs(c[1] - p[1]) >= floor for p in placed)]
+            if not far:
+                floor -= 2
+                continue
+            cell = far[rng.Below(len(far))]
+            pool.remove(cell)
+            loose.remove(cell)
+            self.Grid[cell] = "#"
+            placed.append(cell)
+            need -= 1
         for symbol, count in (("#", need), ("B", 4), ("*", 3), ("F", 2), ("/", 2), ("\\", 2)):
             for _ in range(count):
                 if not loose:
@@ -1430,7 +1434,7 @@ def ParseRunCode(code):
     if len(code) > MaxCodeLength:
         raise ValueError("Run code is too long")
     parts = code.strip().split("-")
-    if parts and parts[0] in ("CH12R", "CH13R"):
+    if parts and parts[0] in ("CH12R", "CH13R", "CH14R"):
         raise ValueError("Saved " + parts[0][:-1] + " run codes are no longer valid in " + Version + ". Start a new run.")
     if len(parts) != 5 or parts[0] != Version + "R":
         raise ValueError("Unknown run code version or wrong number of parts")
