@@ -9,7 +9,7 @@ A terminal game in Python. Aim a cannon, fire a ball into a board of pegs and ta
 - Linux or macOS: `python3 ChainDemo.py --menu`
 - Windows: keep `ChainDemo.py`, `Play.bat` and `PlayText.bat` in one folder and double-click `Play.bat`. Windows is untested.
 
-The terminal needs at least 104 columns by 48 rows. `HowToRun.txt` has the keys and rules.
+The terminal needs at least 104 columns by 48 rows. `HowToRun.txt` has the keys and rules and the display options (`--mono`, `NO_COLOR`, `--ascii`, `--delay`, `--text`).
 
 ## What a run is
 
