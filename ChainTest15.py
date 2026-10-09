@@ -67,7 +67,7 @@ for run in range(30001, 30001 + n):
     for i, b in enumerate(allBoards):
         used = collections.Counter(s.Kind for s in b.Log)
         for c in "rxs":
-            if starts[i].get(c, 0) - used.get(c, 0) != b.Stock.get(c, 0):
+            if starts[i].get(c, 0) + (b.OverGiven if c == "r" else 0) - used.get(c, 0) != b.Stock.get(c, 0):
                 bad["stock " + c] += 1
         hearts = sum(1 for v in b.Grid.values() if v == "F")
         refunds = sum(s.Refund for s in b.Log)
@@ -91,7 +91,7 @@ for run in range(30001, 30001 + n):
         if not 0 <= done <= quota:
             bad["credits range"] += 1
         checked += 1
-    for badCode in (code + ".999", code.replace("CH16R", "CH12R"), code.replace("-" + str(run) + "-", "-0-", 1)):
+    for badCode in (code + ".999", code.replace("CH17R", "CH12R"), code.replace("-" + str(run) + "-", "-0-", 1)):
         try:
             E.ParseRunCode(badCode)
             bad["accepted bad code"] += 1

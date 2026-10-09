@@ -16,7 +16,7 @@ else:
     import termios
     import tty
 
-Version = "CH16"
+Version = "CH17"
 PegCap = 40
 PegGap = 2
 Width = 50
@@ -42,6 +42,8 @@ Stall = 12
 BounceDrift = 7
 TargetCount = 12
 TargetFloor = 6
+OverdriveRally = 3
+OverdriveNeed = 3
 GroupSize = 3
 CascadeCap = 5
 PreviewSteps = 70
@@ -197,6 +199,9 @@ def Credit(shot, points, counts=True):
 
 
 class Board:
+    Meter = 0
+    OverGiven = 0
+
     def __init__(self, seed):
         self.Seed = seed
         self.DockPaid = 0
@@ -599,6 +604,13 @@ class Board:
             self.Stock[ballKind] -= 1
         shot = self.Fire(aim, hook, ballKind=ballKind)
         shot.Refund = 0
+        shot.Overdrive = 0
+        if shot.Rally >= OverdriveRally and self.Meter < OverdriveNeed:
+            self.Meter += 1
+            if self.Meter >= OverdriveNeed and not self.OverGiven:
+                self.OverGiven = 1
+                self.Stock["r"] = self.Stock.get("r", 0) + 1
+                shot.Overdrive = 1
         if shot.Kind == "s" and shot.Targets <= 1:
             shot.Bonus += 1
             shot.Refund = 1
@@ -625,7 +637,7 @@ class Board:
         return path
 
     def Hash(self):
-        data = repr(sorted(self.Grid.items())) + repr(sorted(self.Bumps.items())) + repr(sorted(self.Stock.items())) + str(self.Extra) + "," + str(self.Credit) + "," + str(self.Streak) + "," + str(self.Score)
+        data = repr(sorted(self.Grid.items())) + repr(sorted(self.Bumps.items())) + repr(sorted(self.Stock.items())) + str(self.Extra) + "," + str(self.Meter) + str(self.OverGiven) + "," + str(self.Credit) + "," + str(self.Streak) + "," + str(self.Score)
         return hashlib.sha256(data.encode()).hexdigest()[:8]
 
     def Code(self):
@@ -1203,7 +1215,7 @@ class Screen:
         else:
             options = [("n", "[1] normal"), ("r", "[2] rebound x" + str(board.Stock["r"])), ("x", "[3] blast x" + str(board.Stock["x"])), ("s", "[4] second chance x" + str(board.Stock.get("s", 0)))]
             parts = [self.Paint("good", text) if kind == self.Kind else text for kind, text in options]
-            lines.append(" Ball  " + "  ".join(parts))
+            lines.append(" Ball  " + "  ".join(parts) + "  Overdrive [" + "#" * board.Meter + "-" * (OverdriveNeed - board.Meter) + "]" + (" +1" if board.OverGiven else ""))
         info = getattr(board, "RunInfo", None)
         if info is not None and not self.Watching:
             nxt = "  ".join(KindNames[c] + " x" + str(info.Satchel.get(c, 0)) for c in RunPool if info.Satchel.get(c, 0))
@@ -1259,6 +1271,8 @@ def ShotMessage(board, shot):
         text += ", dock used up, no bonus"
     if shot.Bonus:
         text += ", +" + str(shot.Bonus) + " free shot"
+    if shot.Overdrive:
+        text += ", OVERDRIVE: +1 rebound ball"
     if shot.Kind != "n":
         text += ", " + KindNames[shot.Kind] + " ball"
     if shot.Kind == "s":
@@ -1475,7 +1489,7 @@ def ParseRunCode(code):
     if len(code) > MaxCodeLength:
         raise ValueError("Run code is too long")
     parts = code.strip().split("-")
-    if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R"):
+    if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R"):
         raise ValueError("Saved " + parts[0][:-1] + " run codes are no longer valid in " + Version + ". Start a new run.")
     if len(parts) != 5 or parts[0] != Version + "R":
         raise ValueError("Unknown run code version or wrong number of parts")
