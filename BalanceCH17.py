@@ -1,4 +1,4 @@
-"""Reproducible balance numbers. Usage: python3 BalanceCH18.py [first_seed] [count]
+"""Reproducible balance numbers. Usage: python3 BalanceCH19.py [first_seed] [count]
 Defaults: seeds 30001..30300. Policy = PlayRun from ChainTest15.py (unmodified).
 Prints runs complete, boards played/won, Overdrive earned, and a random-aim baseline."""
 import sys, os, random

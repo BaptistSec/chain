@@ -1,4 +1,4 @@
-CHAIN CH18 (work in progress, builder-reported tests, not AI-proof)
+CHAIN CH19 (work in progress, builder-reported tests)
 
 Keep ChainDemo.py, Play.bat and PlayText.bat together. Needs Python 3, standard library only.
 Linux or macOS: python3 ChainDemo.py --menu
@@ -12,6 +12,8 @@ OVERDRIVE: a shot with a rally of x3 or more fills one of 3 meter segments. The 
 
 BOARDS: eight shapes (diamonds, waves, chevrons, arches, rings, spiral, funnel, stairs); the shape is named in the title bar.
 
+JACKPOT: one target on each board is drawn as a star (or $$ in plain mode). Clearing it adds a flat +500 to that shot. It still counts as a normal target for the credit quota, so you never have to chase it.
+
 DOCK: a catch zone sweeps along the floor. If the ball falls into it you get a free shot and +400. Only the first 2 catches on a board pay.
 
 END OF A BOARD: the row under the board says how it went: "OUT OF SHOTS: N targets left to clear", or "Cleared in S shots, best rally xR, best chain C, Overdrive earned" (or "not earned"). Quitting prints your run code and one line per board.
@@ -22,6 +24,6 @@ DISPLAY: add these after the command, for example python3 ChainDemo.py --menu --
   --delay N: animation pause scale in milliseconds. The default is 30. 0 is the fastest setting. 10 takes about a third of the default time, 60 about twice as long.
   --text: one board as plain text with no colour codes. Type an aim from 1 to 39, then optionally r or x for a Rebound or Blast ball (for example 12 r). q quits. PlayText.bat runs this.
 
-RUN CODES: the code printed on exit replays the run. Codes from older versions (CH17 and earlier) are rejected. Resume with --resume CODE.
+RUN CODES: the code printed on exit replays the run. Codes from older versions (CH18 and earlier) are rejected. Resume with --resume CODE.
 
 NOT TESTED: a real Windows console, a person playing a full run, colour by eye.

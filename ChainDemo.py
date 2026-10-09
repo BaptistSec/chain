@@ -16,7 +16,7 @@ else:
     import termios
     import tty
 
-Version = "CH18"
+Version = "CH19"
 PegCap = 40
 PegGap = 2
 Width = 50
@@ -27,6 +27,7 @@ ShotLimit = 8
 DockHalf = 3
 DockSpan = Width - 1 - 2 * DockHalf
 CatchPoints = 400
+JackpotPoints = 500
 DockCap = 2
 DockPhase = 37
 StepCap = 3600
@@ -82,6 +83,7 @@ class Shot:
     def __init__(self, aim):
         self.Aim = aim
         self.Pegs = 0
+        self.Jackpot = 0
         self.Targets = 0
         self.Points = 0
         self.Rally = 1
@@ -230,6 +232,7 @@ def Credit(shot, points, counts=True):
 class Board:
     Meter = 0
     OverGiven = 0
+    Jackpot = None
 
     def __init__(self, seed):
         self.Seed = seed
@@ -253,6 +256,9 @@ class Board:
         else:
             self.Generate()
         self.Total = sum(1 for v in self.Grid.values() if v == "#")
+        if isinstance(seed, int) and self.Total:
+            cells = sorted(c for c, v in self.Grid.items() if v == "#")
+            self.Jackpot = cells[seed % len(cells)]
 
     def GenerateScatter(self):
         rng = Rng(self.Seed)
@@ -631,6 +637,7 @@ class Board:
             if self.Stock.get(ballKind, 0) <= 0:
                 raise ValueError("No " + KindNames[ballKind] + " balls left")
             self.Stock[ballKind] -= 1
+        jackpotUp = self.Jackpot is not None and self.Grid.get(self.Jackpot) == "#"
         shot = self.Fire(aim, hook, ballKind=ballKind)
         shot.Refund = 0
         shot.Overdrive = 0
@@ -655,6 +662,9 @@ class Board:
             self.Streak = 0
         shot.Mult = max(1, min(self.Streak, 4))
         shot.Points *= shot.Mult
+        if jackpotUp and self.Jackpot not in self.Grid:
+            shot.Jackpot = 1
+            shot.Points += JackpotPoints
         self.Score += shot.Points
         self.Log.append(shot)
         return shot
@@ -823,6 +833,7 @@ Colours = {
     "*": "38;5;78",
     "B": "1;38;5;203",
     "F": "1;38;5;120",
+    "J": "1;38;5;213",
     "/": "38;5;250",
     "\\": "38;5;250",
     "@": "1;38;5;231",
@@ -840,10 +851,10 @@ Colours = {
 }
 TrailColours = ["38;5;252", "38;5;248", "38;5;245", "38;5;242", "38;5;240", "38;5;238"]
 BurstGlyphs = {3: ("*", "1;38;5;226"), 2: ("+", "38;5;208"), 1: (".", "38;5;124")}
-UnicodeGlyphs = {"o": "\u25cf", "+": "\u25c6", "#": "\u2593", "*": "\u25c9", "B": "\u00a4", "F": "\u2665", "/": "\u2571", "\\": "\u2572", "@": "\u25cf", ".": "\u00b7", ":": "\u2022"}
+UnicodeGlyphs = {"o": "\u25cf", "+": "\u25c6", "#": "\u2593", "J": "\u2605", "*": "\u25c9", "B": "\u00a4", "F": "\u2665", "/": "\u2571", "\\": "\u2572", "@": "\u25cf", ".": "\u00b7", ":": "\u2022"}
 BumperGlyphs = ["\u25c9", "\u25ce", "\u25cb"]
-UnicodeWide = {"\u25cf": "\u25cf\u25cf", "\u25c6": "\u25e2\u25e3", "\u2593": "\u2593\u2593", "\u25c9": "\u25c9\u25c9", "\u25ce": "\u25ce\u25ce", "\u25cb": "\u25cb\u25cb", "\u00a4": "\u00a4\u00a4", "\u2665": "\u2665\u2665", "\u2571": "\u2571\u2571", "\u2572": "\u2572\u2572", "\u00b7": "\u00b7\u00b7", "\u2022": "\u2022\u2022"}
-PlainWide = {"o": "()", "+": "<>", "#": "[]", "@": "()"}
+UnicodeWide = {"\u25cf": "\u25cf\u25cf", "\u25c6": "\u25e2\u25e3", "\u2593": "\u2593\u2593", "\u2605": "\u2605\u2605", "\u25c9": "\u25c9\u25c9", "\u25ce": "\u25ce\u25ce", "\u25cb": "\u25cb\u25cb", "\u00a4": "\u00a4\u00a4", "\u2665": "\u2665\u2665", "\u2571": "\u2571\u2571", "\u2572": "\u2572\u2572", "\u00b7": "\u00b7\u00b7", "\u2022": "\u2022\u2022"}
+PlainWide = {"o": "()", "+": "<>", "#": "[]", "J": "$$", "@": "()"}
 
 
 def EnableAnsi():
@@ -1199,6 +1210,8 @@ class Screen:
                 elif cell in burst:
                     glyph, code = BurstGlyphs[burst[cell]]
                     tokens.append((code, glyph * CellCols))
+                elif symbol == "#" and cell == board.Jackpot:
+                    tokens.append((Colours["J"], self.Wide(self.Glyph("J"))))
                 elif symbol is not None:
                     tokens.append((Colours[symbol], self.Wide(self.Glyph(symbol, board.Bumps.get(cell, 0)))))
                 elif y == 0 and abs(x - CannonX) <= 1:
@@ -1235,9 +1248,9 @@ class Screen:
         segment = glyph * ((right - left + 1) * CellCols)
         segment = self.Paint("dockhit" if fx.get("dockhit") else "dock", segment)
         lines.append(shake + corners[2] + corners[4] * (left * CellCols) + segment + corners[4] * ((Width - 1 - right) * CellCols) + corners[3])
-        legend = " " + self.Paint("o", self.Glyph("o")) + " " + self.Paint("+", self.Glyph("+")) + " loose   " + self.Paint("#", self.Glyph("#")) + " target   "
+        legend = " " + self.Paint("o", self.Glyph("o")) + " " + self.Paint("+", self.Glyph("+")) + " loose   " + self.Paint("#", self.Glyph("#")) + " target   " + self.Paint("J", self.Wide(self.Glyph("J"))[:1]) + " jackpot   "
         legend += self.Paint("*", self.Glyph("*")) + (" bumper (3 hits)   " if self.Plain else " bumper (3 hits)   ") + self.Paint("B", self.Glyph("B")) + " bomb   "
-        legend += self.Paint("dock", glyph if False else ("=" if self.Plain else "\u2550")) + " dock (catch)   " + self.Paint("F", self.Glyph("F")) + " free shot   " + self.Paint("/", self.Glyph("/")) + " " + self.Paint("\\", self.Glyph("\\")) + " mirror"
+        legend += self.Paint("dock", glyph if False else ("=" if self.Plain else "\u2550")) + " dock   " + self.Paint("F", self.Glyph("F")) + " free shot   " + self.Paint("/", self.Glyph("/")) + " " + self.Paint("\\", self.Glyph("\\")) + " mirror"
         lines.append(legend)
         if showResult and not self.Watching:
             lines.append(" " + Recap(board)[:Width * CellCols - 1])
@@ -1334,6 +1347,8 @@ def ShotText(board, shot, level):
         text += ", +" + str(shot.Bonus) + (" free shot" if level < 4 else " shot")
     if shot.Overdrive:
         text += ", OVERDRIVE: +1 rebound ball"
+    if shot.Jackpot:
+        text += ", JACKPOT +" + str(JackpotPoints)
     if shot.Kind != "n" and not (shot.Kind == "s" and level >= 2) and level < 3:
         text += ", " + KindNames[shot.Kind] + " ball"
     if shot.Kind == "s":
@@ -1570,7 +1585,7 @@ def ParseRunCode(code):
     if len(code) > MaxCodeLength:
         raise ValueError("Run code is too long")
     parts = code.strip().split("-")
-    if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R", "CH17R"):
+    if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R", "CH17R", "CH18R"):
         raise ValueError("Saved " + parts[0][:-1] + " run codes are no longer valid in " + Version + ". Start a new run.")
     if len(parts) != 5 or parts[0] != Version + "R":
         raise ValueError("Unknown run code version or wrong number of parts")

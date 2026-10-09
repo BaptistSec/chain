@@ -91,7 +91,7 @@ for run in range(30001, 30001 + n):
         if not 0 <= done <= quota:
             bad["credits range"] += 1
         checked += 1
-    for badCode in (code + ".999", code.replace("CH18R", "CH12R"), code.replace("-" + str(run) + "-", "-0-", 1)):
+    for badCode in (code + ".999", code.replace("CH19R", "CH12R"), code.replace("-" + str(run) + "-", "-0-", 1)):
         try:
             E.ParseRunCode(badCode)
             bad["accepted bad code"] += 1
