@@ -1641,7 +1641,7 @@ def Run(args):
         "\u25cf\u2593\u2502".encode(sys.stdout.encoding or "ascii")
     except (UnicodeEncodeError, LookupError):
         plain = True
-    screen = Screen(args.mono, args.delay, plain)
+    screen = Screen(args.mono or bool(os.environ.get("NO_COLOR")), args.delay, plain)
     screen.Reduced = args.reduced
     seed = args.seed
     state = None

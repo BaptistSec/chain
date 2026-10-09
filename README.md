@@ -31,3 +31,5 @@ The `*15` scripts (`ChainTest15.py`, `DockTest15.py`, `KeyTest15.py` and the res
 `MessageFitTest17.py` checks that the shot message always fits the screen with its score and reward text intact, and that the Overdrive meter flash only changes colour.
 
 `RecapTest17.py` checks the board-end recap line ("N targets left to clear", or the cleared-in summary) and the per-board summary printed after the run code, against an independent recount.
+
+`ColorEnvTest17.py` checks that the NO_COLOR environment variable turns colour off, and that the "window too small" size matches the real board.
