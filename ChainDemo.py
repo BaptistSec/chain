@@ -795,6 +795,7 @@ Colours = {
     "dockhit": "1;30;102",
     "dim": "2",
     "good": "1;32",
+    "tag": "1;38;5;229",
 }
 TrailColours = ["38;5;252", "38;5;248", "38;5;245", "38;5;242", "38;5;240", "38;5;238"]
 BurstGlyphs = {3: ("*", "1;38;5;226"), 2: ("+", "38;5;208"), 1: (".", "38;5;124")}
@@ -1082,11 +1083,17 @@ class Screen:
 
     def Cannon(self, aim):
         degrees = AimDegrees(aim)
+        if self.Plain:
+            if abs(degrees) < 10:
+                return "VV"
+            if abs(degrees) < 45:
+                return "//" if degrees < 0 else "\\\\"
+            return "<<" if degrees < 0 else ">>"
         if abs(degrees) < 10:
-            return "v"
+            return "\u25bc\u25bc"
         if abs(degrees) < 45:
-            return "/" if degrees < 0 else "\\"
-        return "<" if degrees < 0 else ">"
+            return "\u2571\u2571" if degrees < 0 else "\u2572\u2572"
+        return "\u25c0\u25c0" if degrees < 0 else "\u25b6\u25b6"
 
     def Frame(self, board, aim, preview, ball=None, message="", showResult=False, fx=None):
         fx = fx or {}
@@ -1125,6 +1132,17 @@ class Screen:
         corners = ("+", "+", "+", "+", "-", "|") if self.Plain else ("\u250c", "\u2510", "\u2514", "\u2518", "\u2500", "\u2502")
         lines.append(shake + corners[0] + corners[4] * (Width * CellCols) + corners[1])
         cannon = self.Cannon(aim)
+        tagCells = {}
+        tag = fx.get("tag")
+        if tag:
+            tx, ty, ttext = tag[0], tag[1], tag[2]
+            ttext = ttext + (" " if len(ttext) % 2 else "")
+            width = len(ttext) // CellCols
+            tx = max(0, min(tx - width // 2, Width - width))
+            ty = max(0, ty - 1)
+            if all((tx + k, ty) not in board.Grid and (tx + k, ty) != ball and (tx + k, ty) not in flash and (tx + k, ty) not in burst and not (ty == 0 and abs(tx + k - CannonX) <= 1) for k in range(width)):
+                for k in range(width):
+                    tagCells[(tx + k, ty)] = ttext[k * CellCols:(k + 1) * CellCols]
         trailIndex = {c: n for n, c in enumerate(reversed(trail))}
         for y in range(Height):
             background = self.Background(y)
@@ -1143,7 +1161,9 @@ class Screen:
                 elif symbol is not None:
                     tokens.append((Colours[symbol], self.Wide(self.Glyph(symbol, board.Bumps.get(cell, 0)))))
                 elif y == 0 and abs(x - CannonX) <= 1:
-                    tokens.append((Colours["V"], ("[ ", cannon + " ", " ]")[x - CannonX + 1]))
+                    tokens.append((Colours["V"], ("[ ", cannon, " ]")[x - CannonX + 1]))
+                elif cell in tagCells:
+                    tokens.append((Colours["tag"], tagCells[cell]))
                 elif cell in trailIndex:
                     tokens.append((TrailColours[min(trailIndex[cell], len(TrailColours) - 1)], self.Wide(self.Glyph(":"))))
                 elif cell in dots:
@@ -1260,6 +1280,10 @@ def Animate(screen, board, aim, kind="n"):
         fx["burst"] = {c: t - 1 for c, t in fx["burst"].items() if t > 1}
         if fx["shake"]:
             fx["shake"] -= 1
+        if fx.get("tag"):
+            fx["tag"][3] -= 1
+            if fx["tag"][3] <= 0:
+                fx["tag"] = None
 
     def Hook(x, y, cells=None, kind=""):
         if screen.Fast or fx.get("skip"):
@@ -1277,9 +1301,16 @@ def Animate(screen, board, aim, kind="n"):
                         stop = max(stop, 0.08)
                     else:
                         stop = max(stop, 0.02)
+            popped = [c for c in previous if c not in board.Grid]
             previous.clear()
             previous.update(board.Grid)
             live = board.Live
+            if live is not None and not screen.Reduced:
+                gain = live.Points - feel.get("pts", 0)
+                feel["pts"] = live.Points
+                if gain > 0 and popped:
+                    popped.sort()
+                    fx["tag"] = [popped[0][0], popped[0][1], "+" + str(gain), 5]
             fx["dock"] = DockX(live.Steps + DockPhase * len(board.Log)) if live else DockX(DockPhase * len(board.Log))
             rally = live.Rally if live else 1
             note = "Rally x" + str(rally) + " - " + str(live.Pegs) + " pegs" if rally > 1 else ""
