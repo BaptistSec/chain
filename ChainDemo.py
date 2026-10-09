@@ -1210,7 +1210,9 @@ class Screen:
         legend += self.Paint("*", self.Glyph("*")) + (" bumper (3 hits)   " if self.Plain else " bumper (3 hits)   ") + self.Paint("B", self.Glyph("B")) + " bomb   "
         legend += self.Paint("dock", glyph if False else ("=" if self.Plain else "\u2550")) + " dock (catch)   " + self.Paint("F", self.Glyph("F")) + " free shot   " + self.Paint("/", self.Glyph("/")) + " " + self.Paint("\\", self.Glyph("\\")) + " mirror"
         lines.append(legend)
-        if self.Watching or showResult:
+        if showResult and not self.Watching:
+            lines.append(" " + Recap(board)[:Width * CellCols - 1])
+        elif self.Watching or showResult:
             lines.append(" After each shot, loose pegs fall. 3+ touching pegs of one kind pop, with any target beside them.")
         else:
             options = [("n", "[1] normal"), ("r", "[2] rebound x" + str(board.Stock["r"])), ("x", "[3] blast x" + str(board.Stock["x"])), ("s", "[4] second chance x" + str(board.Stock.get("s", 0)))]
@@ -1257,6 +1259,25 @@ class Screen:
         sys.stdout.flush()
         Stats["Milliseconds"] += (time.perf_counter() - start) * 1000
         Stats["Frames"] += 1
+
+
+def Recap(board):
+    left = board.TargetsLeft()
+    shots = len(board.Log)
+    if board.Won():
+        best = max([x.Rally for x in board.Log] + [1])
+        return "Cleared in " + str(shots) + (" shot" if shots == 1 else " shots") + ", best rally x" + str(best) + ", best chain " + str(board.BiggestChain()) + ", Overdrive " + ("earned" if board.OverGiven else "not earned")
+    return "OUT OF SHOTS: " + str(left) + (" target" if left == 1 else " targets") + " left to clear"
+
+
+def RunSummary(state, board):
+    boards = list(state.Boards) + ([] if any(board is b for b in state.Boards) else [board])
+    lines = []
+    for i, b in enumerate(boards):
+        shots = len(b.Log)
+        result = "cleared" if b.Won() else ("out of shots, " + str(b.TargetsLeft()) + " left" if b.Over() else "unfinished")
+        lines.append("Board " + str(i + 1) + ": " + result + ", " + str(shots) + (" shot" if shots == 1 else " shots") + ", score " + str(b.Score))
+    return lines
 
 
 def ShotMessage(board, shot, limit=Width * CellCols):
@@ -1579,6 +1600,7 @@ def ResumeRun(code):
 
 
 LastRunCode = [""]
+LastSummary = [[]]
 OldRunCodes = []
 MaxCodeLength = 1200
 MaxRunNumber = 1000000000
@@ -1736,6 +1758,7 @@ def Run(args):
     finally:
         if state is not None:
             LastRunCode[0] = state.Code(board)
+            LastSummary[0] = RunSummary(state, board)
         sys.stdout.write(Escape + "[?25h" + Escape + "[?1049l")
         sys.stdout.flush()
     return board
@@ -2027,6 +2050,8 @@ def Main():
         if LastRunCode[0]:
             print("Run code (continue later with --resume CODE):")
             print(LastRunCode[0])
+            for line in LastSummary[0]:
+                print(line)
         SaveLog(args, board)
     if IsWindows and not os.environ.get("CHAIN_LAUNCHER"):
         print("")

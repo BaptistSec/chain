@@ -29,3 +29,5 @@ The `*15` scripts (`ChainTest15.py`, `DockTest15.py`, `KeyTest15.py` and the res
 `BalanceCH17.py` prints reproducible clear-rate numbers for seeds 30001..30300 (`python3 BalanceCH17.py [first_seed] [count]`). The policy is the bot from `ChainTest15.py`, plus a random-aim baseline. It measures how often a simple bot and random aim clear boards. It does not measure human difficulty.
 
 `MessageFitTest17.py` checks that the shot message always fits the screen with its score and reward text intact, and that the Overdrive meter flash only changes colour.
+
+`RecapTest17.py` checks the board-end recap line ("N targets left to clear", or the cleared-in summary) and the per-board summary printed after the run code, against an independent recount.
