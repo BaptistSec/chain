@@ -9,7 +9,7 @@ def Check(ok, text):
     if not ok: Fails.append(text)
 def Strip(x): return re.sub("\x1b\\[[0-9;]*[A-Za-z]", "", x)
 Limit = E.Width * E.CellCols
-Pinned = "c4d8498fff8222da85d700b6e87758b004bd2c72b9dd3b15adcfdcb10dffbea1"
+Pinned = "990051a5c0719ac03933d109501553e9e887a5d4b2ee3a374cb4672ec5ff25e4"
 digest = hashlib.sha256(); wins = losses = 0; bad = []; frameBad = []
 for seed in range(30001, 30301):
     rng = random.Random(seed)
@@ -50,7 +50,7 @@ Check(wins > 0 and losses > 0, "both outcomes covered")
 Check(not frameBad, "result frame shows the recap exactly once; mono has no colour codes")
 colour = E.Screen(False, 0, False).Frame(b, 20, False, None, "x", True)
 Check(any(Strip(l).strip() == recap for l in colour), "recap also shows in colour mode")
-Check(digest.hexdigest() == Pinned, "engine replay digest identical to the CH20 pin (" + digest.hexdigest()[:8] + ")")
+Check(digest.hexdigest() == Pinned, "engine replay digest identical to the CH21 pin (" + digest.hexdigest()[:8] + ")")
 # run summary
 st = E.RunState(5); first = E.Attach(E.RunBoard(5, 1, dict(st.Satchel)), st)
 rng = random.Random(5)

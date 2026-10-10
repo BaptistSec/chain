@@ -14,7 +14,13 @@ for seed in range(30001, 30301):
     rng = random.Random(seed)
     b = E.Board(seed); boards += 1
     t = sorted(c for c, v in b.Grid.items() if v == "#")
-    if b.Jackpot != t[seed % len(t)]: bad["placement"] += 1
+    reach = {c: 0 for c in t}
+    for aim in range(len(E.Directions)):
+        pr = b.Clone(); pr.Struck = []; pr.Fire(aim, None, E.PreviewSteps, False, True, "n")
+        for c in set(pr.Struck):
+            if c in reach: reach[c] += 1
+    low = min(reach.values()); tied = [c for c in t if reach[c] == low]
+    if b.Jackpot != tied[seed % len(tied)]: bad["placement"] += 1
     if b.Grid.get(b.Jackpot) != "#": bad["not a target"] += 1
     if E.Board(seed).Jackpot != b.Jackpot: bad["not deterministic"] += 1
     b.Stock["s"] = 3
@@ -49,6 +55,15 @@ for seed in range(30001, 30301):
     if r.Hash() != b.Hash() or r.Score != b.Score or [x.Jackpot for x in r.Log] != [x.Jackpot for x in b.Log]: bad["replay"] += 1
 Check(not bad, "jackpot: placement, one-target-only, +500 exactly once and only on that shot, score sums, message, replay (%d boards, %d shots, %d jackpots, problems %s)" % (boards, shots, hits, dict(bad)))
 Check(hits > 100, "enough jackpot hits to mean something (%d)" % hits)
+# spread: the tie-break must not favour one side of the board
+xs = [E.Board(s).Jackpot[0] for s in range(30001, 30301)]
+Check(20.0 <= sum(xs) / len(xs) <= 29.0 and 0.15 <= sum(1 for x in xs if x <= 12) / len(xs) <= 0.35, "jackpot spread: mean column %.1f, left third %.0f%%" % (sum(xs) / len(xs), 100.0 * sum(1 for x in xs if x <= 12) / len(xs)))
+Old = os.environ.get("CH20_DIR")
+if Old and os.path.exists(os.path.join(Old, "ChainDemo.py")):
+    sp = importlib.util.spec_from_file_location("old", os.path.join(Old, "ChainDemo.py")); O = importlib.util.module_from_spec(sp); sp.loader.exec_module(O)
+    Check(all(O.Board(s).Grid == E.Board(s).Grid for s in range(30001, 30301)), "every board layout is identical to CH20 (set CH20_DIR to the CH20 folder)")
+else:
+    print("note CH20_DIR not set: layout identity against CH20 not checked")
 # rendering
 b = E.Board(30001)
 for plain in (False, True):

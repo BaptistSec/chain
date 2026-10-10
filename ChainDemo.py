@@ -16,7 +16,7 @@ else:
     import termios
     import tty
 
-Version = "CH20"
+Version = "CH21"
 PegCap = 40
 PegGap = 2
 Width = 50
@@ -281,8 +281,23 @@ class Board:
             self.Generate()
         self.Total = sum(1 for v in self.Grid.values() if v == "#")
         if isinstance(seed, int) and self.Total:
-            cells = sorted(c for c, v in self.Grid.items() if v == "#")
-            self.Jackpot = cells[seed % len(cells)]
+            self.Jackpot = self.HardestTarget()
+
+    def HardestTarget(self):
+        # Pure function of the finished layout, no rng: the target that the fewest opening aims can strike.
+        # Ties (most boards have several unreachable targets) go to sorted(ties)[seed % count], not the first cell,
+        # because "first in sorted order" put the jackpot on the left third of the board 69% of the time.
+        reach = {c: 0 for c, v in self.Grid.items() if v == "#"}
+        for aim in range(len(Directions)):
+            probe = self.Clone()
+            probe.Struck = []
+            probe.Fire(aim, None, PreviewSteps, False, True, "n")
+            for cell in set(probe.Struck):
+                if cell in reach:
+                    reach[cell] += 1
+        low = min(reach.values())
+        ties = sorted(c for c in reach if reach[c] == low)
+        return ties[self.Seed % len(ties)]
 
     def GenerateScatter(self):
         rng = Rng(self.Seed)
@@ -1609,7 +1624,7 @@ def ParseRunCode(code):
     if len(code) > MaxCodeLength:
         raise ValueError("Run code is too long")
     parts = code.strip().split("-")
-    if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R", "CH17R", "CH18R", "CH19R"):
+    if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R", "CH17R", "CH18R", "CH19R", "CH20R"):
         raise ValueError("Saved " + parts[0][:-1] + " run codes are no longer valid in " + Version + ". Start a new run.")
     if len(parts) != 5 or parts[0] != Version + "R":
         raise ValueError("Unknown run code version or wrong number of parts")
