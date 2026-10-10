@@ -7,11 +7,11 @@ Fails = []
 def Check(ok, text):
     print(("ok   " if ok else "FAIL ") + text)
     if not ok: Fails.append(text)
-# Replay digest pinned from the CH19 engine over the same plays (CH18 value was e7cc97ad...; the jackpot changes scores, so it moved).
-CH17Digest = "8a7350494c4cad3cde6bcff7e831c92dcfbd52acde5fa5cb6d0b5396aa1a4481"
+# Replay digest pinned from the CH20 engine over the same plays (CH18 value was e7cc97ad...; the jackpot changes scores, so it moved).
+CH17Digest = "c4d8498fff8222da85d700b6e87758b004bd2c72b9dd3b15adcfdcb10dffbea1"
 Limit = E.Width * E.CellCols
 digest = hashlib.sha256()
-worst = 0; shots = 0; reward = 0; kinds = {}; bad = []; levels = {l: 0 for l in range(6)}
+worst = 0; shots = 0; reward = 0; kinds = {}; bad = []; levels = {l: 0 for l in range(7)}
 for seed in range(30001, 30301):
     rng = random.Random(seed)
     st = E.RunState(seed); b = E.Attach(E.RunBoard(seed, 1, dict(st.Satchel)), st)
@@ -26,13 +26,13 @@ for seed in range(30001, 30301):
         kinds[k] = kinds.get(k, 0) + 1
         msg = E.ShotMessage(b, shot)
         worst = max(worst, len(msg))
-        lvl = next((l for l in range(6) if hasattr(E, 'ShotText') and E.ShotText(b, shot, l) == msg), 0)
+        lvl = next((l for l in range(7) if hasattr(E, 'ShotText') and E.ShotText(b, shot, l) == msg), 0)
         levels[lvl] += 1
         head = "Shot " + str(len(b.Log)) + ": +" + str(shot.Points)
         ok = len(msg) <= Limit and msg.startswith(head)
         if shot.Rally > 1: ok = ok and ("(rally x" + str(shot.Rally) + ")") in msg
         if shot.Overdrive:
-            reward += 1; ok = ok and "OVERDRIVE: +1 rebound ball" in msg
+            reward += 1; ok = ok and ("OVERDRIVE: +1 rebound ball" in msg or "OVERDRIVE +1 ball" in msg)
         if shot.Bonus: ok = ok and ("+" + str(shot.Bonus) + " free shot" in msg or "+" + str(shot.Bonus) + " shot" in msg)
         if shot.Kind == "s": ok = ok and "Second Chance" in msg
         if not ok: bad.append(msg)
@@ -41,7 +41,7 @@ Check(not bad, "every message fits %d columns and keeps score, rally and reward 
 if bad: print("first bad:", bad[0])
 got = digest.hexdigest()
 print("replay digest", got)
-Check(CH17Digest == "PINNED" or got == CH17Digest, "engine replay hashes identical to the CH19 pin on seeds 30001..30300")
+Check(CH17Digest == "PINNED" or got == CH17Digest, "engine replay hashes identical to the CH20 pin on seeds 30001..30300")
 # meter flash: draw only, same visible text with and without the flash, no colour in Mono
 import re
 def Strip(x): return re.sub("\x1b\\[[0-9;]*[A-Za-z]", "", x)

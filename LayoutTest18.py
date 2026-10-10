@@ -7,9 +7,9 @@ Fails = []
 def Check(ok, text):
     print(("ok   " if ok else "FAIL ") + text)
     if not ok: Fails.append(text)
-New = ["spiral", "funnel", "stairs"]
+New = ["spiral", "funnel", "stairs", "cross", "zigzag", "bowl"]
 Old = ["diamonds", "waves", "chevrons", "arches", "rings"]
-Check(E.LayoutNames == Old + New, "layout names: five old families then spiral, funnel, stairs")
+Check(E.LayoutNames == Old + New, "layout names: five old families then spiral, funnel, stairs, cross, zigzag, bowl")
 First, Count = 30001, 1200
 Fam = collections.defaultdict(collections.Counter)
 Hashes = {}
@@ -61,6 +61,6 @@ for seed in range(First, First + 400):
         lines = E.Screen(True, 0, False).Frame(b, 20, False, None, "", False)
         shapes[fam] = lines
         Check(max(len(l) for l in lines) <= 104, "%s frame fits 104 columns" % fam)
-Check(len(shapes) == 3, "rendered one board of each new family")
+Check(len(shapes) == 6, "rendered one board of each new family")
 print("FAILS", len(Fails))
 sys.exit(1 if Fails else 0)

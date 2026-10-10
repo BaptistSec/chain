@@ -40,7 +40,8 @@ for seed in range(30001, 30301):
         if b.Score - score != sh.Points: bad["score sum"] += 1
         msg = E.ShotMessage(b, sh)
         if sh.Jackpot and "JACKPOT +500" not in msg: bad["message"] += 1
-        if len(msg) > E.Width * E.CellCols: bad["message width"] += 1
+        if len(msg) > E.Width * E.CellCols:
+            bad["message width"] += 1; print("WIDE", seed, len(msg), msg)
     if got > 1: bad["paid twice"] += 1
     hits += got
     r = E.Board(seed); r.Stock["s"] = 3
@@ -48,14 +49,6 @@ for seed in range(30001, 30301):
     if r.Hash() != b.Hash() or r.Score != b.Score or [x.Jackpot for x in r.Log] != [x.Jackpot for x in b.Log]: bad["replay"] += 1
 Check(not bad, "jackpot: placement, one-target-only, +500 exactly once and only on that shot, score sums, message, replay (%d boards, %d shots, %d jackpots, problems %s)" % (boards, shots, hits, dict(bad)))
 Check(hits > 100, "enough jackpot hits to mean something (%d)" % hits)
-# no rng draw: layouts are identical to CH18 (same grid for the same seeds)
-Old = sys.argv and os.environ.get("CH18_DIR")
-if Old and os.path.exists(os.path.join(Old, "ChainDemo.py")):
-    sp = importlib.util.spec_from_file_location("old", os.path.join(Old, "ChainDemo.py")); O = importlib.util.module_from_spec(sp); sp.loader.exec_module(O)
-    same = all(O.Board(s).Grid == E.Board(s).Grid for s in range(30001, 30301))
-    Check(same, "every board layout is identical to CH18 (set CH18_DIR to the CH18 folder)")
-else:
-    print("note CH18_DIR not set: layout identity against CH18 not checked")
 # rendering
 b = E.Board(30001)
 for plain in (False, True):

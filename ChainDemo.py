@@ -16,7 +16,7 @@ else:
     import termios
     import tty
 
-Version = "CH19"
+Version = "CH20"
 PegCap = 40
 PegGap = 2
 Width = 50
@@ -99,7 +99,7 @@ class Shot:
         self.FloorX = -1
 
 
-LayoutNames = ["diamonds", "waves", "chevrons", "arches", "rings", "spiral", "funnel", "stairs"]
+LayoutNames = ["diamonds", "waves", "chevrons", "arches", "rings", "spiral", "funnel", "stairs", "cross", "zigzag", "bowl"]
 
 
 def DockX(step):
@@ -213,11 +213,35 @@ def LayoutLines(style, rng):
             if k:
                 points = [(Width - 1 - px, py) for px, py in points]
             lines.append(Path(points))
-    else:
+    elif style == 4:
         for cx, cy in ((12, 15), (Width - 13, 15)):
             w = 5 + rng.Below(2)
             h = 4 + rng.Below(2)
             lines.append(Path([(cx - w, cy - h + 2), (cx - w + 2, cy - h), (cx + w - 2, cy - h), (cx + w, cy - h + 2), (cx + w, cy + h - 2), (cx + w - 2, cy + h), (cx - w + 2, cy + h), (cx - w, cy + h - 2), (cx - w, cy - h + 2)]))
+    elif style == 8:
+        top = 6 + rng.Below(3)
+        down = 20 + rng.Below(3)
+        reach = 17 + rng.Below(3)
+        mid = Width // 2
+        lines.append(Path([(mid - reach, top), (mid + reach, top + down)]))
+        lines.append(Path([(mid + reach, top), (mid - reach, top + down)]))
+    elif style == 9:
+        for k in range(2):
+            y = 8 + 11 * k + rng.Below(2)
+            x = 3 + rng.Below(3)
+            points = [(x, y)]
+            for step in range(5):
+                x += 8 + rng.Below(2)
+                y += 4 if step % 2 == 0 else -4
+                points.append((x, y))
+            if k:
+                points = [(Width - 1 - px, py) for px, py in points]
+            lines.append(Path(points))
+    elif style == 10:
+        base = 22 + rng.Below(3)
+        lines.append(Path([(3, base - 10), (8, base - 2), (15, base), (Width - 16, base), (Width - 9, base - 2), (Width - 4, base - 10)]))
+        top = 6 + rng.Below(3)
+        lines.append(Path([(12, top + 3), (18, top), (Width - 19, top), (Width - 13, top + 3)]))
     return lines
 
 
@@ -1324,7 +1348,7 @@ def RunSummary(state, board):
 
 def ShotMessage(board, shot, limit=Width * CellCols):
     # Lowest priority detail is dropped first, so the score, rally and any reward text always stay whole.
-    for level in range(6):
+    for level in range(7):
         text = ShotText(board, shot, level)
         if len(text) <= limit:
             return text
@@ -1346,14 +1370,14 @@ def ShotText(board, shot, level):
     if shot.Bonus:
         text += ", +" + str(shot.Bonus) + (" free shot" if level < 4 else " shot")
     if shot.Overdrive:
-        text += ", OVERDRIVE: +1 rebound ball"
+        text += ", OVERDRIVE: +1 rebound ball" if level < 6 else ", OVERDRIVE +1 ball"
     if shot.Jackpot:
         text += ", JACKPOT +" + str(JackpotPoints)
     if shot.Kind != "n" and not (shot.Kind == "s" and level >= 2) and level < 3:
         text += ", " + KindNames[shot.Kind] + " ball"
     if shot.Kind == "s":
         if level >= 5:
-            text += " | Second Chance: " + ("refunded" if shot.Refund else "no refund")
+            text += " | Second Chance " + ("refunded" if shot.Refund else "no refund")
         elif level >= 2:
             text += " | Second Chance: " + (str(shot.Targets) + (" target" if shot.Targets == 1 else " targets") + ", refunded" if shot.Refund else "2+ targets, no refund")
         elif shot.Refund:
@@ -1585,7 +1609,7 @@ def ParseRunCode(code):
     if len(code) > MaxCodeLength:
         raise ValueError("Run code is too long")
     parts = code.strip().split("-")
-    if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R", "CH17R", "CH18R"):
+    if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R", "CH17R", "CH18R", "CH19R"):
         raise ValueError("Saved " + parts[0][:-1] + " run codes are no longer valid in " + Version + ". Start a new run.")
     if len(parts) != 5 or parts[0] != Version + "R":
         raise ValueError("Unknown run code version or wrong number of parts")
