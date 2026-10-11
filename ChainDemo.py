@@ -1347,8 +1347,17 @@ def Recap(board):
     shots = len(board.Log)
     if board.Won():
         best = max([x.Rally for x in board.Log] + [1])
-        return "Cleared in " + str(shots) + (" shot" if shots == 1 else " shots") + ", best rally x" + str(best) + ", best chain " + str(board.BiggestChain()) + ", Overdrive " + ("earned" if board.OverGiven else "not earned")
-    return "OUT OF SHOTS: " + str(left) + (" target" if left == 1 else " targets") + " left to clear"
+        return "Cleared in " + str(shots) + (" shot" if shots == 1 else " shots") + ", best rally x" + str(best) + ", best chain " + str(board.BiggestChain()) + ", Overdrive " + ("earned" if board.OverGiven else "not earned") + JackpotRecap(board)
+    return "OUT OF SHOTS: " + str(left) + (" target" if left == 1 else " targets") + " left to clear" + JackpotRecap(board)
+
+
+def JackpotRecap(board):
+    # Boards from a board file have no jackpot and say nothing.
+    if board.Jackpot is None:
+        return ""
+    if any(x.Jackpot for x in board.Log):
+        return ", jackpot +" + str(JackpotPoints)
+    return ", jackpot not collected"
 
 
 def RunSummary(state, board):

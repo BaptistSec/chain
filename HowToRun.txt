@@ -12,7 +12,7 @@ OVERDRIVE: a shot with a rally of x3 or more fills one of 3 meter segments. The 
 
 BOARDS: eleven shapes (diamonds, waves, chevrons, arches, rings, spiral, funnel, stairs, cross, zigzag, bowl); the shape is named in the title bar.
 
-JACKPOT: one target on each board is drawn as a star (or $$ in plain mode). Clearing it adds a flat +500 to that shot. It is the target that the fewest opening aims can strike, so it is usually one you have to set up for. It still counts as a normal target for the credit quota, so you never have to chase it.
+JACKPOT: one target on each board is drawn as a star (or $$ in plain mode). Clearing it adds a flat +500 to that shot. It is the target that the fewest opening aims can strike, so it is usually one you have to set up for. It still counts as a normal target for the credit quota, so you never have to chase it. The recap at the end of a board says whether you collected it.
 
 DOCK: a catch zone sweeps along the floor. If the ball falls into it you get a free shot and +400. Only the first 2 catches on a board pay.
 
