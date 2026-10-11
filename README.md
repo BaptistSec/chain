@@ -20,6 +20,10 @@ Three boards. Earn the credit quota on each (9, 10, 10; one credit per target cl
 
 The picture is the game's own frame (a cross board, plain text mode, jackpot shown as $$) rendered to an image without colour, not a live terminal capture.
 
+![CHAIN CH21 mid-run frame](screenshots/board-ch21-play.png)
+
+The second picture is a mid-run frame from the CH21 engine (a spiral board after the third shot of a test-bot run: the jackpot has just been collected, so its $$ is gone and the shot message ends with JACKPOT +500). It is drawn the same way, from the game's own frame without colour, and is not a live terminal capture.
+
 ## Tests
 
 The `*15` scripts (`ChainTest15.py`, `DockTest15.py`, `KeyTest15.py` and the rest) assert and exit non-zero on failure. They are my own tests, so treat results as builder-reported. `PtyDrive15.py` plays whole runs through a real pseudo-terminal.
