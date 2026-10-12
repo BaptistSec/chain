@@ -15,7 +15,7 @@ jp = collections.Counter()
 digest = hashlib.sha256(); wins = losses = 0; bad = []; frameBad = []
 for seed in range(30001, 30301):
     rng = random.Random(seed)
-    st = E.RunState(seed); b = E.Attach(E.RunBoard(seed, 1, dict(st.Satchel)), st)
+    st = E.RunState(seed, True); b = E.Attach(E.RunBoard(seed, 1, dict(st.Satchel), True), st)
     b.Stock["s"] = 3
     while not b.Over():
         k = "n"
@@ -26,7 +26,7 @@ for seed in range(30001, 30301):
     digest.update((b.Hash() + "|" + str(len(b.Log))).encode())
     recap = E.Recap(b)
     # independent recount: replay the aims on a fresh board and read the HUD credits line
-    fresh = E.Attach(E.RunBoard(seed, 1, dict(st.Satchel)), st); fresh.Stock["s"] = 3
+    fresh = E.Attach(E.RunBoard(seed, 1, dict(st.Satchel), True), st); fresh.Stock["s"] = 3
     for s in b.Log: fresh.Play(s.Aim, None, s.Kind)
     scr = E.Screen(True, 0, False)
     frame = scr.Frame(fresh, 20, False, None, "x", True)

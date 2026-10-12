@@ -2,7 +2,7 @@
 
 A terminal game in Python. Aim a cannon, fire a ball into a board of pegs and targets, and clear every board in a run. Python 3 standard library only.
 
-**Status: work in progress.** Version CH21.  The board is half-width with every cell two columns wide (50 cells across), so sprites are bigger in the same terminal size, CH17 added an Overdrive meter, and CH18 added three new board shapes (spiral, funnel, stairs), CH19 marks one target on each board as a jackpot worth +500 extra, CH20 adds three more board shapes (cross, zigzag, bowl), and CH21 moves the jackpot to the target that the fewest opening aims can strike (the hard one, still only +500 and never required). Run codes from CH20 and earlier no longer work. Everything below is builder-reported from my own automated tests. Not tested: a real Windows console, a person playing a full run, colour by a human eye.
+**Status: work in progress.** Version CH23.  The board is half-width with every cell two columns wide (50 cells across), so sprites are bigger in the same terminal size, CH17 added an Overdrive meter, and CH18 added three new board shapes (spiral, funnel, stairs), CH19 marks one target on each board as a jackpot worth +500 extra, CH20 adds three more board shapes (cross, zigzag, bowl), and CH21 moves the jackpot to the target that the fewest opening aims can strike (the hard one, still only +500 and never required). CH23 adds two more board shapes (pinwheel, columns). CH21 board codes and CH21R run codes still replay to exactly the boards they had, because the code prefix picks the board generator (checked by VersionTest23.py); CH23 and CH23R codes use the thirteen-shape set. Codes from CH20 and earlier no longer work. Everything below is builder-reported from my own automated tests. Not tested: a real Windows console, a person playing a full run, colour by a human eye.
 
 ## Run it
 
@@ -38,6 +38,10 @@ The `*15` scripts (`ChainTest15.py`, `DockTest15.py`, `KeyTest15.py` and the res
 `RecapTest17.py` checks the board-end recap line ("N targets left to clear", or the cleared-in summary, each ending with whether the jackpot was collected) and the per-board summary printed after the run code, against an independent recount.
 
 `ColorEnvTest17.py` checks that the NO_COLOR environment variable turns colour off, and that the "window too small" size matches the real board.
+
+`VersionTest23.py` checks that CH21 and CH21R codes still resolve to the same boards as the published CH22 engine (digest over 600 seeds), that CH23 codes use the new generator, that bad prefixes are rejected, and that pinwheel and columns are well formed.
+
+`RestartTest23.py` drives the real game with --resume on a CH21R and a CH23R run, presses r, and checks the restarted board, title bar and printed run codes keep that run's version (a restart used to rebuild a CH21R run on the CH23 boards).
 
 `LayoutTest18.py` checks the six newer board shapes (spiral, funnel, stairs, cross, zigzag, bowl) over 1200 seeds: they never fall back to scatter, always have 12 targets, keep target spacing, give an opening shot a reasonable reach, and are cleared by the test bot about as often as the older shapes. It does not measure how fun they are. `LayoutMeasure18.py` prints the per-shape table.
 

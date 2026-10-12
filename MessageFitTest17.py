@@ -14,7 +14,7 @@ digest = hashlib.sha256()
 worst = 0; shots = 0; reward = 0; kinds = {}; bad = []; levels = {l: 0 for l in range(7)}
 for seed in range(30001, 30301):
     rng = random.Random(seed)
-    st = E.RunState(seed); b = E.Attach(E.RunBoard(seed, 1, dict(st.Satchel)), st)
+    st = E.RunState(seed, True); b = E.Attach(E.RunBoard(seed, 1, dict(st.Satchel), True), st)
     b.Stock["s"] = 3  # give Second Chance balls so every ball kind is exercised
     while not b.Over():
         k = "n"

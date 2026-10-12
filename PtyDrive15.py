@@ -53,7 +53,7 @@ def Keys(run):
         keys += ["w", "w", "n", "w", "w"]
         if k < len(allb) - 1:
             pick = state.Picks[k]
-            keys += [str(E.RunOffer(run, k + 1).index(pick) + 1), "w", "w"]
+            keys += ["0" if pick == "0" else str(E.RunOffer(run, k + 1).index(pick) + 1), "w", "w"]
     return keys, state
 
 if __name__ == "__main__":

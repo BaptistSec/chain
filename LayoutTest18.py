@@ -9,14 +9,14 @@ def Check(ok, text):
     if not ok: Fails.append(text)
 New = ["spiral", "funnel", "stairs", "cross", "zigzag", "bowl"]
 Old = ["diamonds", "waves", "chevrons", "arches", "rings"]
-Check(E.LayoutNames == Old + New, "layout names: five old families then spiral, funnel, stairs, cross, zigzag, bowl")
+Check(E.LayoutNames == Old + New + ["pinwheel", "columns"] and E.LegacyLayoutCount == 11, "layout names: eleven CH21 families in their old order, then pinwheel and columns")
 First, Count = 30001, 1200
 Fam = collections.defaultdict(collections.Counter)
 Hashes = {}
 Scatter = collections.Counter()
 for seed in range(First, First + Count):
-    b = E.Board(seed)
-    origin = E.LayoutNames[E.Rng(seed).Below(len(E.LayoutNames))]
+    b = E.Board(seed, True)
+    origin = E.LayoutNames[E.Rng(seed).Below(E.LegacyLayoutCount)]
     fam = b.Style.split(" ")[0]
     R = Fam[origin]
     R["boards"] += 1
@@ -31,7 +31,7 @@ for seed in range(First, First + Count):
     R["reach"] += sum(1 for t in targets if t in hit)
     R["pegs"] += len(b.Grid)
     if seed - First < 150: Hashes[seed] = b.Hash()
-    rng = random.Random(seed); bb = E.Board(seed)
+    rng = random.Random(seed); bb = E.Board(seed, True)
     while not bb.Over():
         left = E.ShotLimit + bb.Extra - len(bb.Log)
         aim, h = Policy(bb, rng)
@@ -51,12 +51,12 @@ for o in New:
     Check(R["floor ok"] >= 0.9 * n, "%s keeps the %d-cell target spacing on at least 90%% of boards (%.0f%%)" % (o, E.TargetFloor, 100.0 * R["floor ok"] / n))
     Check(R["reach"] / n >= 7.0, "%s: an opening shot can strike at least 7 of 12 targets on average (%.1f)" % (o, R["reach"] / n))
     Check(abs(rate(o) - oldAvg) <= 15.0 and 50.0 <= rate(o) <= 85.0, "%s bot clear rate %.1f%% within 15 points of the old families (%.1f%%) and 50-85%%" % (o, rate(o), oldAvg))
-Check(all(E.Board(s).Hash() == h for s, h in Hashes.items()), "boards are deterministic per seed (150 rebuilt)")
+Check(all(E.Board(s, True).Hash() == h for s, h in Hashes.items()), "boards are deterministic per seed (150 rebuilt)")
 Check(len(set(Hashes.values())) == len(Hashes), "150 consecutive seeds give 150 different boards")
 # every family renders inside the screen and looks different
 shapes = {}
 for seed in range(First, First + 400):
-    b = E.Board(seed); fam = b.Style.split(" ")[0]
+    b = E.Board(seed, True); fam = b.Style.split(" ")[0]
     if fam in New and fam not in shapes:
         lines = E.Screen(True, 0, False).Frame(b, 20, False, None, "", False)
         shapes[fam] = lines

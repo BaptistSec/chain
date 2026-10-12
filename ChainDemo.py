@@ -16,7 +16,9 @@ else:
     import termios
     import tty
 
-Version = "CH21"
+Version = "CH23"
+LegacyVersion = "CH21"
+LegacyLayoutCount = 11
 PegCap = 40
 PegGap = 2
 Width = 50
@@ -99,7 +101,7 @@ class Shot:
         self.FloorX = -1
 
 
-LayoutNames = ["diamonds", "waves", "chevrons", "arches", "rings", "spiral", "funnel", "stairs", "cross", "zigzag", "bowl"]
+LayoutNames = ["diamonds", "waves", "chevrons", "arches", "rings", "spiral", "funnel", "stairs", "cross", "zigzag", "bowl", "pinwheel", "columns"]
 
 
 def DockX(step):
@@ -237,6 +239,23 @@ def LayoutLines(style, rng):
             if k:
                 points = [(Width - 1 - px, py) for px, py in points]
             lines.append(Path(points))
+    elif style == 11:
+        mid = Width // 2
+        cy = 19 + rng.Below(3)
+        w = 12 + rng.Below(3)
+        d = 9 + rng.Below(2)
+        hook = 6
+        # four blades round an open hub, each tipped with a hook that turns the same way round
+        lines.append(Path([(mid + 3, cy - 1), (mid + w, cy - d), (mid + w, cy - d + hook)]))
+        lines.append(Path([(mid + 1, cy + 3), (mid + w, cy + d), (mid + w - 2 * hook, cy + d)]))
+        lines.append(Path([(mid - 3, cy + 1), (mid - w, cy + d), (mid - w, cy + d - hook)]))
+        lines.append(Path([(mid - 1, cy - 3), (mid - w, cy - d), (mid - w + 2 * hook, cy - d)]))
+    elif style == 12:
+        for k in range(6):
+            x = 5 + 8 * k + rng.Below(3) - 1
+            top = 6 + 7 * (k % 2) + rng.Below(4)
+            lean = rng.Below(9) - 4
+            lines.append(Path([(x, top), (x + lean, top + 18 + rng.Below(4))]))
     elif style == 10:
         base = 22 + rng.Below(3)
         lines.append(Path([(3, base - 10), (8, base - 2), (15, base), (Width - 16, base), (Width - 9, base - 2), (Width - 4, base - 10)]))
@@ -258,8 +277,9 @@ class Board:
     OverGiven = 0
     Jackpot = None
 
-    def __init__(self, seed):
+    def __init__(self, seed, legacy=False):
         self.Seed = seed
+        self.Legacy = legacy
         self.DockPaid = 0
         self.Grid = {}
         self.Bumps = {}
@@ -311,7 +331,7 @@ class Board:
 
     def Generate(self):
         rng = Rng(self.Seed)
-        style = rng.Below(len(LayoutNames))
+        style = rng.Below(LegacyLayoutCount if self.Legacy else len(LayoutNames))
         mirror = rng.Below(2) == 0 and style in (0, 4)
         lines = LayoutLines(style, rng)
         if mirror:
@@ -719,7 +739,7 @@ class Board:
         return hashlib.sha256(data.encode()).hexdigest()[:8]
 
     def Code(self):
-        return Version + "-" + str(self.Seed) + "-" + ".".join(str(s.Aim) + ("" if s.Kind == "n" else s.Kind) for s in self.Log)
+        return (LegacyVersion if self.Legacy else Version) + "-" + str(self.Seed) + "-" + ".".join(str(s.Aim) + ("" if s.Kind == "n" else s.Kind) for s in self.Log)
 
     def BiggestChain(self):
         return max([s.Chain for s in self.Log] + [0])
@@ -756,8 +776,8 @@ def ScriptAim(aimer, board):
     return aim
 
 
-def BotPar(seed):
-    board = Board(seed)
+def BotPar(seed, legacy=False):
+    board = Board(seed, legacy)
     while not board.Over():
         aim, kind = BotAim(board)
         board.Play(aim, None, kind)
@@ -800,8 +820,13 @@ def ExportBoard(seed, path):
 
 
 def ParseCode(code):
+    return ParseCodeFull(code)[:2]
+
+
+def ParseCodeFull(code):
+    # The prefix picks the board generator: CH21 codes keep their original eleven-shape boards, CH23 codes use the new set.
     parts = code.strip().split("-")
-    if len(parts) not in (2, 3) or parts[0] != Version:
+    if len(parts) not in (2, 3) or parts[0] not in (Version, LegacyVersion):
         raise ValueError("Unknown code version or wrong number of parts")
     if parts[1].startswith("f") and len(parts[1]) == 9:
         seed = parts[1]
@@ -820,12 +845,12 @@ def ParseCode(code):
             if aim < 0 or aim >= len(Directions):
                 raise ValueError("Bad aim in code")
             aims.append((aim, kind))
-    return seed, aims
+    return seed, aims, parts[0] == LegacyVersion
 
 
 def Replay(code):
-    seed, aims = ParseCode(code)
-    board = Board(seed)
+    seed, aims, legacy = ParseCodeFull(code)
+    board = Board(seed, legacy)
     for aim, kind in aims:
         if board.Over():
             break
@@ -836,7 +861,7 @@ def Replay(code):
 def ResultBlock(board):
     total = board.Total
     cleared = total - board.TargetsLeft()
-    lines = ["CHAIN " + Version + "  board " + str(board.Seed)]
+    lines = ["CHAIN " + (LegacyVersion if board.Legacy else Version) + "  board " + str(board.Seed)]
     if board.Won():
         lines.append("Cleared all " + str(total) + " targets in " + str(len(board.Log)) + " shots")
     else:
@@ -844,7 +869,7 @@ def ResultBlock(board):
     lines.append("Score " + str(board.Score) + "   biggest chain " + str(board.BiggestChain()) + "   settle pops " + str(board.SettlePopTotal()))
     for number, shot in enumerate(board.Log, 1):
         lines.append("Shot " + str(number) + ": aim " + str(shot.Aim + 1) + ("" if shot.Kind == "n" else " " + KindNames[shot.Kind]) + "  pegs " + str(shot.Pegs) + "  chain " + str(shot.Chain) + "  settle " + str(shot.SettlePops))
-    shots, cleared, count = BotPar(board.Seed)
+    shots, cleared, count = BotPar(board.Seed, board.Legacy)
     if cleared:
         lines.append("Bot par " + str(shots) + " shots (a bot that tries all " + str(len(Directions)) + " aims each shot cleared this board in " + str(shots) + ")")
     else:
@@ -1199,7 +1224,7 @@ class Screen:
         left = total - len(board.Log)
         quota = getattr(board, "Quota", board.Total)
         done = min(max(quota - board.TargetsLeft(), 0), quota)
-        title = " CHAIN  board " + str(board.Seed) + ("  (" + board.Style + ")" if board.Style else "") + "  " + Version + " "
+        title = " CHAIN  board " + str(board.Seed) + ("  (" + board.Style + ")" if board.Style else "") + "  " + (LegacyVersion if board.Legacy else Version) + " "
         lines = [self.Paint("title", title.ljust(Width * CellCols + 2))]
         def Status(extra):
             text = " Shots " + self.Bar(left, total, "o")
@@ -1557,10 +1582,10 @@ def Animate(screen, board, aim, kind="n"):
 
 def Watch(args, screen, keys):
     if args.replay:
-        seed, aims = ParseCode(args.replay)
+        seed, aims, legacy = ParseCodeFull(args.replay)
     else:
-        seed, aims = args.seed, None
-    board = Board(seed)
+        seed, aims, legacy = args.seed, None, False
+    board = Board(seed, legacy)
     screen.Watching = True
     step = 0
     label = "Replay of " + args.replay if args.replay else "Bot playing"
@@ -1601,8 +1626,8 @@ def RunOffer(run, k):
     return [RunPool[(a + i) % 3] for i in range(3)]
 
 
-def RunBoard(run, k, satchel):
-    board = Board(RunBoardSeed(run, k))
+def RunBoard(run, k, satchel, legacy=False):
+    board = Board(RunBoardSeed(run, k), legacy)
     quota = RunQuotas[k - 1]
     board.Stock = {c: satchel.get(c, 0) for c in RunPool}
     board.Credit = max(board.Total - quota, 0)
@@ -1616,8 +1641,9 @@ def Attach(board, state):
 
 
 class RunState:
-    def __init__(self, run):
+    def __init__(self, run, legacy=False):
         self.Run = run
+        self.Legacy = legacy
         self.K = 1
         self.Satchel = dict(RunStart)
         self.Picks = []
@@ -1626,16 +1652,20 @@ class RunState:
     def Code(self, board=None):
         done = self.Boards + ([board] if board is not None and board not in self.Boards else [])
         shots = "/".join(".".join(str(x.Aim) + ("" if x.Kind == "n" else x.Kind) for x in b.Log) for b in done)
-        return Version + "R-" + str(self.Run) + "-" + ".".join(str(q) for q in RunQuotas) + "-" + "".join(self.Picks) + "-" + shots
+        return (LegacyVersion if self.Legacy else Version) + "R-" + str(self.Run) + "-" + ".".join(str(q) for q in RunQuotas) + "-" + "".join(self.Picks) + "-" + shots
 
 
 def ParseRunCode(code):
+    return ParseRunCodeFull(code)[:3]
+
+
+def ParseRunCodeFull(code):
     if len(code) > MaxCodeLength:
         raise ValueError("Run code is too long")
     parts = code.strip().split("-")
     if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R", "CH17R", "CH18R", "CH19R", "CH20R"):
         raise ValueError("Saved " + parts[0][:-1] + " run codes are no longer valid in " + Version + ". Start a new run.")
-    if len(parts) != 5 or parts[0] != Version + "R":
+    if len(parts) != 5 or parts[0] not in (Version + "R", LegacyVersion + "R"):
         raise ValueError("Unknown run code version or wrong number of parts")
     if not parts[1].isdigit() or len(parts[1]) > 10:
         raise ValueError("Bad run number")
@@ -1667,13 +1697,13 @@ def ParseRunCode(code):
         chunks.append(shots)
     if not 1 <= len(chunks) <= len(RunQuotas) or len(picks) != len(chunks) - 1:
         raise ValueError("Run code does not fit its run")
-    return run, picks, chunks
+    return run, picks, chunks, parts[0] == LegacyVersion + "R"
 
 
 def ResumeRun(code):
-    run, picks, chunks = ParseRunCode(code)
-    state = RunState(run)
-    board = Attach(RunBoard(run, 1, state.Satchel), state)
+    run, picks, chunks, legacy = ParseRunCodeFull(code)
+    state = RunState(run, legacy)
+    board = Attach(RunBoard(run, 1, state.Satchel, legacy), state)
     for index, shots in enumerate(chunks):
         for aim, kind in shots:
             if board.Over():
@@ -1687,7 +1717,7 @@ def ResumeRun(code):
             if picks[index] != "0":
                 state.Satchel[picks[index]] = state.Satchel.get(picks[index], 0) + 1
             state.K += 1
-            board = Attach(RunBoard(run, state.K, state.Satchel), state)
+            board = Attach(RunBoard(run, state.K, state.Satchel, legacy), state)
     return state, board
 
 
@@ -1744,7 +1774,7 @@ def Run(args):
         state = None
     elif args.run:
         state = RunState(args.run)
-        board = Attach(RunBoard(state.Run, state.K, state.Satchel), state)
+        board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy), state)
         seed = board.Seed
     elif args.code:
         board = Replay(args.code)
@@ -1765,7 +1795,7 @@ def Run(args):
                 if picked is None:
                     return None
                 state = RunState(picked)
-                board = Attach(RunBoard(state.Run, state.K, state.Satchel), state)
+                board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy), state)
                 seed = board.Seed
             while True:
                 screen.Show(screen.Frame(board, aim, preview, None, message, board.Over()))
@@ -1790,8 +1820,8 @@ def Run(args):
                     break
                 elif state is not None and key == "r":
                     OldRunCodes.append(state.Code(board))
-                    state = RunState(state.Run)
-                    board = Attach(RunBoard(state.Run, 1, state.Satchel), state)
+                    state = RunState(state.Run, state.Legacy)
+                    board = Attach(RunBoard(state.Run, 1, state.Satchel, state.Legacy), state)
                     seed = board.Seed
                     screen.Kind = "n"
                     message = "Run restarted from board 1, score and satchel reset. The old run code prints when you quit."
@@ -1800,7 +1830,7 @@ def Run(args):
                         message = "Finish this board first"
                     elif not board.Won():
                         state = RunState(NextRunNumber(state.Run))
-                        board = Attach(RunBoard(state.Run, 1, state.Satchel), state)
+                        board = Attach(RunBoard(state.Run, 1, state.Satchel, state.Legacy), state)
                         seed = board.Seed
                         screen.Kind = "n"
                         message = "New run " + str(state.Run)
@@ -1812,7 +1842,7 @@ def Run(args):
                         if keys.Read() in ("q", "esc"):
                             break
                         state = RunState(NextRunNumber(state.Run))
-                        board = Attach(RunBoard(state.Run, 1, state.Satchel), state)
+                        board = Attach(RunBoard(state.Run, 1, state.Satchel, state.Legacy), state)
                         seed = board.Seed
                         screen.Kind = "n"
                         message = "New run " + str(state.Run)
@@ -1826,12 +1856,12 @@ def Run(args):
                             if pick != "0":
                                 state.Satchel[pick] = state.Satchel.get(pick, 0) + 1
                             state.K += 1
-                            board = Attach(RunBoard(state.Run, state.K, state.Satchel), state)
+                            board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy), state)
                             seed = board.Seed
                             screen.Kind = "n"
                             message = "Board " + str(state.K) + " of " + str(len(RunQuotas))
                 elif key == "r":
-                    board = Board(seed)
+                    board = Board(seed, board.Legacy)
                     screen.Kind = "n"
                     message = "Same board again"
                 elif key == "n":
@@ -1839,7 +1869,7 @@ def Run(args):
                         message = "A board file has no next board"
                     else:
                         seed += 1
-                        board = Board(seed)
+                        board = Board(seed, board.Legacy)
                         screen.Kind = "n"
                         message = "Next board"
                 elif key in (" ", "enter") and not board.Over():
