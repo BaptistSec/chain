@@ -276,6 +276,7 @@ class Board:
     Meter = 0
     OverGiven = 0
     Jackpot = None
+    Limit = ShotLimit
 
     def __init__(self, seed, legacy=False):
         self.Seed = seed
@@ -452,7 +453,7 @@ class Board:
         return self.TargetsLeft() == 0
 
     def Over(self):
-        return self.Won() or len(self.Log) >= ShotLimit + self.Extra
+        return self.Won() or len(self.Log) >= self.Limit + self.Extra
 
     def Remove(self, cell, points, shot, removed):
         symbol = self.Grid.pop(cell)
@@ -1005,6 +1006,8 @@ Help = [
     "Clear nodes in one shot to build a rally. Credits open the next sector.",
     "The gold line on the floor is the dock. It sweeps side to side. Land the charge in it",
     "for a free shot and +400, but only the first 2 catches on each board pay.",
+    "Marathon (M on the title screen): boards keep coming with rising quotas and, deeper in,",
+    "fewer shots. The first board you fail ends the marathon. Your best marathon is saved.",
 ]
 
 
@@ -1081,6 +1084,77 @@ def BestLines(best, isNew, saved):
     return lines
 
 
+def MarathonBestPath():
+    return os.environ.get("CHAIN_MARATHON_FILE") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "ChainMarathon.txt")
+
+
+def ReadMarathonBest(path):
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return 0, 0, True
+    if not stat.S_ISREG(info.st_mode):
+        return 0, 0, False
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read(BestLimit + 1)
+    except OSError:
+        return 0, 0, True
+    if len(raw) > BestLimit:
+        return 0, 0, True
+    try:
+        text = raw.decode("ascii").strip()
+    except UnicodeDecodeError:
+        return 0, 0, True
+    parts = text.split(",")
+    if len(parts) != 2 or any(not p.isdigit() or len(p) > 12 for p in parts):
+        return 0, 0, True
+    return int(parts[0]), int(parts[1]), True
+
+
+def WriteMarathonBest(path, boards, total):
+    folder = os.path.dirname(path) or "."
+    temp = os.path.join(folder, ".chainmarathon-" + os.urandom(8).hex() + ".tmp")
+    created = False
+    try:
+        if os.path.lexists(path) and not stat.S_ISREG(os.lstat(path).st_mode):
+            return False
+        descriptor = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        created = True
+        with os.fdopen(descriptor, "w") as handle:
+            handle.write(str(boards) + "," + str(total) + "\n")
+        os.replace(temp, path)
+        return True
+    except OSError:
+        if created:
+            try:
+                os.unlink(temp)
+            except OSError:
+                pass
+        return False
+
+
+def RecordMarathonBest(boards, total):
+    path = MarathonBestPath()
+    prevBoards, prevTotal, writable = ReadMarathonBest(path)
+    isNew = boards > prevBoards or (boards == prevBoards and total > prevTotal)
+    best = (boards, total) if isNew else (prevBoards, prevTotal)
+    saved = False
+    if isNew and writable:
+        saved = WriteMarathonBest(path, boards, total)
+    return best, isNew, saved
+
+
+def MarathonBestLines(best, isNew, saved):
+    where = "ChainMarathon.txt next to the game" if not os.environ.get("CHAIN_MARATHON_FILE") else "the file named by CHAIN_MARATHON_FILE"
+    lines = [" Local best marathon: " + str(best[0]) + " boards, score " + str(best[1]) + (" (new)" if isNew else "")]
+    if isNew and saved:
+        lines.append(" Saved to " + where)
+    elif isNew:
+        lines.append(" Not saved: the best file could not be written (shown on this screen only)")
+    return lines
+
+
 def DailyRun():
     today = time.localtime()
     return today.tm_year * 10000 + today.tm_mon * 100 + today.tm_mday
@@ -1105,7 +1179,7 @@ def TitleLines(screen, step, page):
     if page == "help":
         lines.append(" " * 14 + "[any key] back")
     elif step >= len(Premise):
-        lines.append(" " * 14 + "[Enter] new run    [D] daily run (" + DailyLabel() + ")    [H] how to play    [Q] quit")
+        lines.append(" " * 14 + "[Enter] run   [M] marathon   [D] daily (" + DailyLabel() + ")   [H] how to play   [Q] quit")
         lines.append(" " * 14 + "Same local date, same starting boards. Share your run code to compare;")
         lines.append(" " * 14 + "there is no online leaderboard.")
         lines.append(" " * 14 + "Continue a saved run:  --resume CODE")
@@ -1130,9 +1204,11 @@ def TitleScreen(screen, keys):
         if page == "help":
             page = "title"
         elif key in ("enter", "return", " ", "space"):
-            return random.SystemRandom().randint(1, MaxRunNumber)
+            return random.SystemRandom().randint(1, MaxRunNumber), False
+        elif key == "m":
+            return random.SystemRandom().randint(1, MaxRunNumber), True
         elif key == "d":
-            return DailyRun()
+            return DailyRun(), False
         elif key == "h":
             page = "help"
         elif key in ("q", "esc"):
@@ -1220,7 +1296,7 @@ class Screen:
         dots = set()
         if preview and ball is None and not board.Over():
             dots = set(board.Trace(aim, self.Kind))
-        total = ShotLimit + board.Extra
+        total = board.Limit + board.Extra
         left = total - len(board.Log)
         quota = getattr(board, "Quota", board.Total)
         done = min(max(quota - board.TargetsLeft(), 0), quota)
@@ -1327,7 +1403,8 @@ class Screen:
         info = getattr(board, "RunInfo", None)
         if info is not None and not self.Watching:
             nxt = "  ".join(KindNames[c] + " x" + str(info.Satchel.get(c, 0)) for c in RunPool if info.Satchel.get(c, 0))
-            lines.append(" Board " + str(info.K) + "/" + str(len(RunQuotas)) + "  Refunds " + str(sum(x.Refund for x in board.Log)) + "  Dock " + ("used up" if board.DockPaid >= DockCap else str(DockCap - board.DockPaid) + " left") + "  Bonus shots " + str(board.Extra - sum(x.Refund for x in board.Log)) + "  Next: " + nxt)
+            label = (" Marathon board " + str(info.K)) if info.Marathon else (" Board " + str(info.K) + "/" + str(len(RunQuotas)))
+            lines.append(label + "  Refunds " + str(sum(x.Refund for x in board.Log)) + "  Dock " + ("used up" if board.DockPaid >= DockCap else str(DockCap - board.DockPaid) + " left") + "  Bonus shots " + str(board.Extra - sum(x.Refund for x in board.Log)) + "  Next: " + nxt)
         if self.Watching:
             controls = " WATCH MODE   " + ("board cleared" if board.Won() else "out of shots" if board.Over() else "[any key] at the end closes it") + "   [Ctrl+C] stops"
         elif showResult:
@@ -1335,11 +1412,12 @@ class Screen:
             if info is None:
                 controls = " " + ("YOU WIN" if board.Won() else "OUT OF SHOTS") + "   [R] same board   [N] next board   [Q] quit and show code"
             elif not board.Won():
-                controls = " OUT OF SHOTS   [N] new run " + str(NextRunNumber(info.Run)) + "   [R] restart run " + str(info.Run) + "   [Q] quit and show code"
-            elif info.K >= len(RunQuotas):
+                controls = (" OUT OF SHOTS   [N] end marathon   [R] restart marathon " + str(info.Run) + "   [Q] quit and show code" if info.Marathon
+                            else " OUT OF SHOTS   [N] new run " + str(NextRunNumber(info.Run)) + "   [R] restart run " + str(info.Run) + "   [Q] quit and show code")
+            elif not info.Marathon and info.K >= len(RunQuotas):
                 controls = " BOARD CLEARED, LAST BOARD   [N] finish the run   [R] restart run " + str(info.Run) + "   [Q] quit and show code"
             else:
-                controls = " BOARD CLEARED   [N] pick an upgrade   [R] restart run " + str(info.Run) + "   [Q] quit and show code"
+                controls = " BOARD CLEARED   [N] pick an upgrade   [R] restart " + ("marathon " if info.Marathon else "run ") + str(info.Run) + "   [Q] quit and show code"
         else:
             controls = " [<][>] aim " + str(aim + 1) + "/" + str(len(Directions)) + " " + str(AimDegrees(aim)) + "deg  [Space] fire  [P] preview " + ("on" if preview else "off") + "  [F] fast " + ("on" if self.Fast else "off") + ("  [R] restart  [N] next  [Q] quit" if getattr(board, "RunInfo", None) is not None else "  [R] redo  [N] next  [Q] quit")
         lines.append(controls)
@@ -1615,6 +1693,18 @@ LargeShotPoints = 1500
 RunQuotas = (9, 10, 10)
 RunPool = ["r", "x", "s"]
 RunStart = {"r": 1, "x": 1}
+MarathonQuotas = (8, 8, 9, 9, 10, 10, 11, 11)
+MarathonShots = (8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7)
+MarathonQuotaTop = 12
+MarathonShotFloor = 6
+
+
+def MarathonQuota(k):
+    return MarathonQuotas[k - 1] if k <= len(MarathonQuotas) else MarathonQuotaTop
+
+
+def MarathonShotLimit(k):
+    return MarathonShots[k - 1] if k <= len(MarathonShots) else MarathonShotFloor
 
 
 def RunBoardSeed(run, k):
@@ -1626,12 +1716,14 @@ def RunOffer(run, k):
     return [RunPool[(a + i) % 3] for i in range(3)]
 
 
-def RunBoard(run, k, satchel, legacy=False):
+def RunBoard(run, k, satchel, legacy=False, marathon=False):
     board = Board(RunBoardSeed(run, k), legacy)
-    quota = RunQuotas[k - 1]
+    quota = MarathonQuota(k) if marathon else RunQuotas[k - 1]
     board.Stock = {c: satchel.get(c, 0) for c in RunPool}
     board.Credit = max(board.Total - quota, 0)
     board.Quota = quota
+    if marathon:
+        board.Limit = MarathonShotLimit(k)
     return board
 
 
@@ -1641,9 +1733,10 @@ def Attach(board, state):
 
 
 class RunState:
-    def __init__(self, run, legacy=False):
+    def __init__(self, run, legacy=False, marathon=False):
         self.Run = run
         self.Legacy = legacy
+        self.Marathon = marathon
         self.K = 1
         self.Satchel = dict(RunStart)
         self.Picks = []
@@ -1652,6 +1745,8 @@ class RunState:
     def Code(self, board=None):
         done = self.Boards + ([board] if board is not None and board not in self.Boards else [])
         shots = "/".join(".".join(str(x.Aim) + ("" if x.Kind == "n" else x.Kind) for x in b.Log) for b in done)
+        if self.Marathon:
+            return Version + "M-" + str(self.Run) + "-" + "".join(self.Picks) + "-" + shots
         return (LegacyVersion if self.Legacy else Version) + "R-" + str(self.Run) + "-" + ".".join(str(q) for q in RunQuotas) + "-" + "".join(self.Picks) + "-" + shots
 
 
@@ -1659,10 +1754,47 @@ def ParseRunCode(code):
     return ParseRunCodeFull(code)[:3]
 
 
+def ParseShotChunks(text):
+    chunks = []
+    for part in text.split("/"):
+        shots = []
+        pieces = part.split(".") if part else []
+        if len(pieces) > MaxShotsPerBoard:
+            raise ValueError("Too many shots for one board")
+        for p in pieces:
+            kind = "n"
+            if p and p[-1] in "rxs":
+                kind = p[-1]
+                p = p[:-1]
+            if not p.isdigit() or len(p) > 3:
+                raise ValueError("Bad aim in run code")
+            aim = int(p)
+            if aim < 0 or aim >= len(Directions):
+                raise ValueError("Bad aim in run code")
+            shots.append((aim, kind))
+        chunks.append(shots)
+    return chunks
+
+
 def ParseRunCodeFull(code):
     if len(code) > MaxCodeLength:
         raise ValueError("Run code is too long")
     parts = code.strip().split("-")
+    if parts[0] == Version + "M":
+        if len(parts) != 4:
+            raise ValueError("Unknown run code version or wrong number of parts")
+        if not parts[1].isdigit() or len(parts[1]) > 10:
+            raise ValueError("Bad run number")
+        run = int(parts[1])
+        if run < 1 or run > MaxRunNumber:
+            raise ValueError("Run number must be from 1 to " + str(MaxRunNumber))
+        picks = list(parts[2])
+        if any(p not in RunPool and p != "0" for p in picks):
+            raise ValueError("Bad pick in run code")
+        chunks = ParseShotChunks(parts[3])
+        if not chunks or len(picks) != len(chunks) - 1:
+            raise ValueError("Run code does not fit its run")
+        return run, picks, chunks, False, True
     if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R", "CH17R", "CH18R", "CH19R", "CH20R"):
         raise ValueError("Saved " + parts[0][:-1] + " run codes are no longer valid in " + Version + ". Start a new run.")
     if len(parts) != 5 or parts[0] not in (Version + "R", LegacyVersion + "R"):
@@ -1697,13 +1829,13 @@ def ParseRunCodeFull(code):
         chunks.append(shots)
     if not 1 <= len(chunks) <= len(RunQuotas) or len(picks) != len(chunks) - 1:
         raise ValueError("Run code does not fit its run")
-    return run, picks, chunks, parts[0] == LegacyVersion + "R"
+    return run, picks, chunks, parts[0] == LegacyVersion + "R", False
 
 
 def ResumeRun(code):
-    run, picks, chunks, legacy = ParseRunCodeFull(code)
-    state = RunState(run, legacy)
-    board = Attach(RunBoard(run, 1, state.Satchel, legacy), state)
+    run, picks, chunks, legacy, marathon = ParseRunCodeFull(code)
+    state = RunState(run, legacy, marathon)
+    board = Attach(RunBoard(run, 1, state.Satchel, legacy, marathon), state)
     for index, shots in enumerate(chunks):
         for aim, kind in shots:
             if board.Over():
@@ -1717,7 +1849,7 @@ def ResumeRun(code):
             if picks[index] != "0":
                 state.Satchel[picks[index]] = state.Satchel.get(picks[index], 0) + 1
             state.K += 1
-            board = Attach(RunBoard(run, state.K, state.Satchel, legacy), state)
+            board = Attach(RunBoard(run, state.K, state.Satchel, legacy, marathon), state)
     return state, board
 
 
@@ -1776,6 +1908,13 @@ def Run(args):
         state = RunState(args.run)
         board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy), state)
         seed = board.Seed
+    elif args.marathon:
+        if not 1 <= args.marathon <= MaxRunNumber:
+            print("Marathon number must be from 1 to " + str(MaxRunNumber))
+            return None
+        state = RunState(args.marathon, marathon=True)
+        board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy, True), state)
+        seed = board.Seed
     elif args.code:
         board = Replay(args.code)
         seed = board.Seed
@@ -1794,8 +1933,8 @@ def Run(args):
                 picked = TitleScreen(screen, keys)
                 if picked is None:
                     return None
-                state = RunState(picked)
-                board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy), state)
+                state = RunState(picked[0], marathon=picked[1])
+                board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy, state.Marathon), state)
                 seed = board.Seed
             while True:
                 screen.Show(screen.Frame(board, aim, preview, None, message, board.Over()))
@@ -1820,21 +1959,37 @@ def Run(args):
                     break
                 elif state is not None and key == "r":
                     OldRunCodes.append(state.Code(board))
-                    state = RunState(state.Run, state.Legacy)
-                    board = Attach(RunBoard(state.Run, 1, state.Satchel, state.Legacy), state)
+                    state = RunState(state.Run, state.Legacy, state.Marathon)
+                    board = Attach(RunBoard(state.Run, 1, state.Satchel, state.Legacy, state.Marathon), state)
                     seed = board.Seed
                     screen.Kind = "n"
-                    message = "Run restarted from board 1, score and satchel reset. The old run code prints when you quit."
+                    message = ("Marathon restarted from board 1, score and satchel reset. The old marathon code prints when you quit." if state.Marathon
+                               else "Run restarted from board 1, score and satchel reset. The old run code prints when you quit.")
                 elif state is not None and key == "n":
                     if not board.Over():
                         message = "Finish this board first"
+                    elif not board.Won() and state.Marathon:
+                        state.Boards.append(board)
+                        cleared = len(state.Boards) - 1
+                        total = sum(b.Score for b in state.Boards)
+                        bestLines = MarathonBestLines(*RecordMarathonBest(cleared, total))
+                        screen.Show(["", " MARATHON OVER   " + str(cleared) + (" board cleared" if cleared == 1 else " boards cleared"), " Total score " + str(total)]
+                                    + bestLines + ["", " Marathon code (replays this marathon):", " " + state.Code(), "",
+                                                   " [any key] marathon " + str(NextRunNumber(state.Run)) + "    [Q] quit"])
+                        if keys.Read() in ("q", "esc"):
+                            break
+                        state = RunState(NextRunNumber(state.Run), marathon=True)
+                        board = Attach(RunBoard(state.Run, 1, state.Satchel, False, True), state)
+                        seed = board.Seed
+                        screen.Kind = "n"
+                        message = "New marathon " + str(state.Run)
                     elif not board.Won():
                         state = RunState(NextRunNumber(state.Run))
                         board = Attach(RunBoard(state.Run, 1, state.Satchel, state.Legacy), state)
                         seed = board.Seed
                         screen.Kind = "n"
                         message = "New run " + str(state.Run)
-                    elif state.K >= len(RunQuotas):
+                    elif not state.Marathon and state.K >= len(RunQuotas):
                         state.Boards.append(board)
                         total = sum(b.Score for b in state.Boards)
                         bestLines = BestLines(*RecordBest(total))
@@ -1856,10 +2011,11 @@ def Run(args):
                             if pick != "0":
                                 state.Satchel[pick] = state.Satchel.get(pick, 0) + 1
                             state.K += 1
-                            board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy), state)
+                            board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy, state.Marathon), state)
                             seed = board.Seed
                             screen.Kind = "n"
-                            message = "Board " + str(state.K) + " of " + str(len(RunQuotas))
+                            message = ("Marathon board " + str(state.K) + "   quota " + str(board.Quota) + " of " + str(board.Total) + ", " + str(board.Limit) + " shots" if state.Marathon
+                                       else "Board " + str(state.K) + " of " + str(len(RunQuotas)))
                 elif key == "r":
                     board = Board(seed, board.Legacy)
                     screen.Kind = "n"
@@ -1919,7 +2075,7 @@ def TextMode(args):
     print("CHAIN text mode. Pick an aim from 1 (shallow left) to " + str(len(Directions)) + " (shallow right). 20 is straight down. Add r or x for a rebound or blast ball, like 12 r. q quits.")
     while not board.Over():
         print(TextBoard(board))
-        print("Shots left " + str(ShotLimit + board.Extra - len(board.Log)) + "  rebound " + str(board.Stock["r"]) + "  blast " + str(board.Stock["x"]) + "  targets left " + str(board.TargetsLeft()) + "  score " + str(board.Score))
+        print("Shots left " + str(board.Limit + board.Extra - len(board.Log)) + "  rebound " + str(board.Stock["r"]) + "  blast " + str(board.Stock["x"]) + "  targets left " + str(board.TargetsLeft()) + "  score " + str(board.Score))
         try:
             answer = input("Aim: ").strip().lower()
         except EOFError:
@@ -2089,6 +2245,7 @@ def Main():
     parser.add_argument("--export", type=str, default="")
     parser.add_argument("--log", action="store_true")
     parser.add_argument("--run", type=int, default=None)
+    parser.add_argument("--marathon", type=int, default=None)
     parser.add_argument("--menu", action="store_true")
     parser.add_argument("--resume", type=str, default="")
     parser.add_argument("--reduced", action="store_true")
