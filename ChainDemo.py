@@ -1001,11 +1001,13 @@ Premise = [
 Help = [
     "[<] [>]  aim          [Space]  fire         [P]  preview",
     "[1] to [4]  choose the ball    [F]  fast        [Q]  quit",
+    "",
     "Gravity pulls the charge down. Pegs, walls, mirrors and the floor cost it speed,",
     "so a shot has a short life. Spend it where it counts.",
     "Clear nodes in one shot to build a rally. Credits open the next sector.",
     "The gold line on the floor is the dock. It sweeps side to side. Land the charge in it",
     "for a free shot and +400, but only the first 2 catches on each board pay.",
+    "",
     "Marathon (M on the title screen): boards keep coming with rising quotas and, deeper in,",
     "fewer shots. The first board you fail ends the marathon. Your best marathon is saved.",
 ]
@@ -1180,6 +1182,7 @@ def TitleLines(screen, step, page):
         lines.append(" " * 14 + "[any key] back")
     elif step >= len(Premise):
         lines.append(" " * 14 + "[Enter] run   [M] marathon   [D] daily (" + DailyLabel() + ")   [H] how to play   [Q] quit")
+        lines.append("")
         lines.append(" " * 14 + "Same local date, same starting boards. Share your run code to compare;")
         lines.append(" " * 14 + "there is no online leaderboard.")
         lines.append(" " * 14 + "Continue a saved run:  --resume CODE")
@@ -1391,6 +1394,15 @@ class Screen:
         legend = " " + self.Paint("o", self.Glyph("o")) + " " + self.Paint("+", self.Glyph("+")) + " loose   " + self.Paint("#", self.Glyph("#")) + " target   " + self.Paint("J", self.Wide(self.Glyph("J"))[:1]) + " jackpot   "
         legend += self.Paint("*", self.Glyph("*")) + (" bumper (3 hits)   " if self.Plain else " bumper (3 hits)   ") + self.Paint("B", self.Glyph("B")) + " bomb   "
         legend += self.Paint("dock", glyph if False else ("=" if self.Plain else "\u2550")) + " dock   " + self.Paint("F", self.Glyph("F")) + " free shot   " + self.Paint("/", self.Glyph("/")) + " " + self.Paint("\\", self.Glyph("\\")) + " mirror"
+        text = message[:Width * CellCols]
+        if not self.Mono and not self.Watching:
+            if text.startswith("RALLY x"):
+                bold = "1;" if text[7:8] in ("4", "5") else ""
+                text = Escape + "[" + bold + "38;5;208m" + text + Reset
+            elif text == "1 credit to clear":
+                text = Escape + "[1;38;5;141m" + text + Reset
+        lines.append(" " + text)
+        lines.append("")
         lines.append(legend)
         if showResult and not self.Watching:
             lines.append(" " + Recap(board)[:Width * CellCols - 1])
@@ -1400,6 +1412,7 @@ class Screen:
             options = [("n", "[1] normal"), ("r", "[2] rebound x" + str(board.Stock["r"])), ("x", "[3] blast x" + str(board.Stock["x"])), ("s", "[4] second chance x" + str(board.Stock.get("s", 0)))]
             parts = [self.Paint("good", text) if kind == self.Kind else text for kind, text in options]
             lines.append(" Ball  " + "  ".join(parts) + "  " + self.Paint("dockhit" if fx.get("meter") else "good" if board.OverGiven else "", "Overdrive [" + "#" * board.Meter + "-" * (OverdriveNeed - board.Meter) + "]" + (" +1" if board.OverGiven else "")))
+        lines.append("")
         info = getattr(board, "RunInfo", None)
         if info is not None and not self.Watching:
             nxt = "  ".join(KindNames[c] + " x" + str(info.Satchel.get(c, 0)) for c in RunPool if info.Satchel.get(c, 0))
@@ -1421,14 +1434,6 @@ class Screen:
         else:
             controls = " [<][>] aim " + str(aim + 1) + "/" + str(len(Directions)) + " " + str(AimDegrees(aim)) + "deg  [Space] fire  [P] preview " + ("on" if preview else "off") + "  [F] fast " + ("on" if self.Fast else "off") + ("  [R] restart  [N] next  [Q] quit" if getattr(board, "RunInfo", None) is not None else "  [R] redo  [N] next  [Q] quit")
         lines.append(controls)
-        text = message[:Width * CellCols]
-        if not self.Mono and not self.Watching:
-            if text.startswith("RALLY x"):
-                bold = "1;" if text[7:8] in ("4", "5") else ""
-                text = Escape + "[" + bold + "38;5;208m" + text + Reset
-            elif text == "1 credit to clear":
-                text = Escape + "[1;38;5;141m" + text + Reset
-        lines.append(" " + text)
         return lines
 
     def Keys_(self, line):
@@ -1883,7 +1888,7 @@ def DraftScreen(screen, keys, state, board):
 def Run(args):
     size = shutil.get_terminal_size((80, 24))
     needCols = Width * CellCols + 4
-    needRows = Height + 10
+    needRows = Height + 11
     if size.columns < needCols or size.lines < needRows:
         print("Window too small: needs at least " + str(needCols) + " columns and " + str(needRows) + " rows, has " + str(size.columns) + " by " + str(size.lines) + ". Enlarge the window and start again.")
         return None
@@ -2323,10 +2328,12 @@ def Main():
     if board is not None:
         print(ResultBlock(board))
         if OldRunCodes:
+            print("")
             print("Run codes from runs you restarted:")
             for old in OldRunCodes:
                 print(old)
         if LastRunCode[0]:
+            print("")
             print("Run code (continue later with --resume CODE):")
             print(LastRunCode[0])
             for line in LastSummary[0]:

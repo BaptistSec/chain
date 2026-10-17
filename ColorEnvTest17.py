@@ -46,7 +46,7 @@ Check(not Sgr.search(both), "--mono plus NO_COLOR: off")
 sys.argv = ["x"]
 Spec = importlib.util.spec_from_file_location("chain", os.path.join(here, "ChainDemo.py"))
 E = importlib.util.module_from_spec(Spec); Spec.loader.exec_module(E)
-need = (E.Width * E.CellCols + 4, E.Height + 10)
+need = (E.Width * E.CellCols + 4, E.Height + 11)
 st = E.RunState(3); b = E.Attach(E.RunBoard(3, 1, dict(st.Satchel)), st)
 strip = lambda x: re.sub("\x1b\\[[0-9;]*[A-Za-z]", "", x)
 widest = 0; rows = 0

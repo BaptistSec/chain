@@ -12,7 +12,7 @@ def Drive(args, keys):
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(here); os.execvp("python3", ["python3", "ChainDemo.py", "--delay", "0", "--mono", "--ascii"] + args)
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 48, 104, 0, 0))
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 49, 104, 0, 0))
     buf = b""
     def Pump(t):
         nonlocal buf
