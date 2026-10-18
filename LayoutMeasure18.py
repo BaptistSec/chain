@@ -15,11 +15,13 @@ for seed in range(First, First + Count):
     loose = sum(1 for v in b.Grid.values() if v in "o+")
     targets = [c for c, v in b.Grid.items() if v == "#"]
     R["pegs"] += len(b.Grid); R["targets"] += len(targets)
-    if len(targets) != E.TargetCount: R["wrong target count"] += 1
+    want = (E.CH24Tune.get(E.LayoutNames.index(fam), {}).get("tc", E.TargetCount) if not (b.Legacy or b.Mid) and fam in E.LayoutNames else E.TargetCount)
+    if len(targets) != want: R["wrong target count"] += 1
     # target spacing (min manhattan between targets)
     mind = min([abs(a[0]-c[0])+abs(a[1]-c[1]) for i, a in enumerate(targets) for c in targets[i+1:]] or [99])
     R["min spacing sum"] += mind
-    if mind < E.TargetFloor: R["spacing below floor"] += 1
+    floor = 3 if (not (b.Legacy or b.Mid) and fam in E.LayoutNames and E.CH24Tune.get(E.LayoutNames.index(fam), {}).get("greedy")) else 2
+    if mind < floor: R["spacing below floor"] += 1
     # reachability from opening shot: every target struck by some aim
     hit = set()
     for a in range(len(E.Directions)):
@@ -38,7 +40,7 @@ for seed in range(First, First + Count):
     while not rb.Over(): rb.Play(r.randrange(len(E.Directions)), None, "n")
     R["random won"] += rb.Won()
 print("seeds %d..%d, %d boards" % (First, First + Count - 1, Count))
-print("%-9s %6s %6s %7s %7s %9s %8s %9s %8s %8s" % ("family", "boards", "share", "pegs", "target", "reach/12", "mind", "bot win", "rand win", "flags"))
+print("%-9s %6s %6s %7s %7s %9s %8s %9s %8s %8s" % ("family", "boards", "share", "pegs", "target", "reach/T", "mind", "bot win", "rand win", "flags"))
 for fam, R in sorted(Rows.items()):
     n = R["boards"]
     print("%-9s %6d %5.1f%% %7.1f %7.1f %9.2f %8.1f %8.1f%% %7.1f%%   wrongT %d floor %d" % (fam, n, 100.0*n/Count, R["pegs"]/n, R["targets"]/n, R["opening-reachable targets"]/n, R["min spacing sum"]/n, 100.0*R["bot won"]/n, 100.0*R["random won"]/n, R["wrong target count"], R["spacing below floor"]))

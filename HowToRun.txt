@@ -1,4 +1,4 @@
-CHAIN CH23 (work in progress, builder-reported tests)
+CHAIN CH24 (work in progress, builder-reported tests)
 
 Keep ChainDemo.py, Play.bat and PlayText.bat together. Needs Python 3, standard library only.
 Linux or macOS: python3 ChainDemo.py --menu
@@ -26,6 +26,6 @@ DISPLAY: add these after the command, for example python3 ChainDemo.py --menu --
 
 MARATHON: press M on the title screen. Boards keep coming: the quota rises every two boards (8, 8, 9, 9, 10, 10, 11, 11, then all 12 targets) and the shot limit tightens (8 shots, then 7, then 6). The first failed board ends the marathon. Your best marathon (boards cleared, then score) is saved to ChainMarathon.txt next to the game. --marathon N starts marathon N directly.
 
-RUN CODES: the code printed on exit replays the run. CH21 codes (CH21R for runs) still replay on their original boards, CH23 codes (CH23R) use the new boards, marathon codes (CH23M) replay a marathon, and codes from CH20 and earlier are rejected. Resume with --resume CODE.
+RUN CODES: the code printed on exit replays the run. CH21 codes (CH21R for runs) still replay on their original boards, CH23 codes (CH23R, CH23M) still replay on theirs, new codes use the tuned CH24 boards (CH24, CH24R, CH24M), and codes from CH20 and earlier are rejected. Resume with --resume CODE.
 
 NOT TESTED: a real Windows console, a person playing a full run, colour by eye.

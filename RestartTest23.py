@@ -1,4 +1,4 @@
-"""Restart (r) inside a resumed run keeps the run's version: CH21R stays CH21R on the old generator, CH23R stays CH23R."""
+"""Restart (r) inside a resumed run keeps the run's version: CH21R, CH23R and CH24R each stay on their own generator."""
 import sys, os, re, pty, select, struct, fcntl, termios, time
 sys.argv = ["x"]
 here = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, here)
@@ -31,12 +31,12 @@ def Drive(args, keys):
     try: os.kill(pid, 9)
     except OSError: pass
     return Esc.sub(b"\n", buf).decode("utf8", "replace")
-for prefix, legacy in (("CH21R", True), ("CH23R", False)):
+for prefix, legacy, mid in (("CH21R", True, False), ("CH23R", False, True), ("CH24R", False, False)):
     code = prefix + "-99-9.10.10--"
     st, b = E.ResumeRun(code)
-    Check(st.Legacy == legacy, prefix + ": resumed state has legacy=" + str(legacy))
-    want = E.RunBoard(99, 1, dict(st.Satchel), legacy).Hash()
-    other = E.RunBoard(99, 1, dict(st.Satchel), not legacy).Hash()
+    Check(st.Legacy == legacy and st.Mid == mid, prefix + ": resumed state has legacy=" + str(legacy) + " mid=" + str(mid))
+    want = E.RunBoard(99, 1, dict(st.Satchel), legacy, False, mid).Hash()
+    other = E.RunBoard(99, 1, dict(st.Satchel), not legacy, False, not mid).Hash()
     Check(want != other, prefix + ": run 99 board 1 differs between the two generators (test is meaningful)")
     out = Drive(["--resume", code], ["r", "q"])
     codes = re.findall(r"(CH2\d)R-99-[0-9.]+--", out)
@@ -44,6 +44,6 @@ for prefix, legacy in (("CH21R", True), ("CH23R", False)):
     titles = re.findall(r"board \d+ .*?(CH2\d) ", out)
     Check(titles and titles[-1] == prefix[:4], prefix + ": title bar after restart shows " + prefix[:4] + " (saw " + str(titles[-2:]) + ")")
     # the board shown after the restart must be the generator's own board 1 of run 99: compare seed layout via title seed + shape name
-    shape = E.RunBoard(99, 1, dict(st.Satchel), legacy).Style.split()[0]
+    shape = E.RunBoard(99, 1, dict(st.Satchel), legacy, False, mid).Style.split()[0]
     Check(("(" + shape) in out, prefix + ": restarted board shows the " + prefix[:4] + " shape " + shape)
 print("FAILS", len(Fails)); sys.exit(1 if Fails else 0)
