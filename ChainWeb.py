@@ -472,7 +472,7 @@ var DIRS = __DIRS__;
 var S = {screen:"title", board:null, aim:19, ball:"n", preview:true, fast:false,
          playing:false, msg:"", dock:25, records:null, daily:"", gen:0};
 var cv = document.getElementById("board"), ctx = cv.getContext("2d");
-var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx = [], catchFx = [], fxPump = false;
+var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx = [], catchFx = [], fxPump = false, flourishFx = [], recoilT = 0;
 
 function api(path, body) {
   return fetch(path + (path.indexOf("?") < 0 ? "?" : "&") + "k=" + TOKEN,
@@ -513,7 +513,7 @@ function drawCell(x, y, sym, bumps, jackpot) {
       ctx.lineTo(px+c/2+Math.cos(t)*(c/2-1), py+c/2+Math.sin(t)*(c/2-1)); ctx.stroke(); }
     ctx.fillStyle = "#401010"; circ(px+c/2, py+c/2, 2.2); ctx.fill();
   } else if (sym === "F") {
-    ctx.fillStyle = "#87ff87"; ctx.font = "bold 14px Verdana"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#87ff87"; ctx.font = 'bold 14px Verdana, "DejaVu Sans", sans-serif'; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText("\u2665", px+c/2, py+c/2+1);
   } else if (sym === "/" || sym === "\\") {
     ctx.strokeStyle = "#c8ccd2"; ctx.lineWidth = 3;
@@ -529,9 +529,54 @@ function circ(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); }
 function star(cx, cy, n, ro, ri) { ctx.beginPath(); for (var i = 0; i < 2*n; i++) { var r = i%2 ? ri : ro, t = i*Math.PI/n - Math.PI/2; ctx[i ? "lineTo" : "moveTo"](cx+Math.cos(t)*r, cy+Math.sin(t)*r); } ctx.closePath(); }
 
 /* ---------- board drawing ---------- */
+function drawStyleEmblem(style) {
+  if (!style) return;
+  var base = style.replace(" mirrored", ""), cx = OX + W*CS/2, cy = OY + H*CS/2, R = H*CS*0.30;
+  ctx.save();
+  ctx.globalAlpha = 0.05; ctx.strokeStyle = "#39c2d7"; ctx.lineWidth = 10; ctx.lineJoin = "round";
+  ctx.beginPath();
+  if (base === "diamonds") {
+    ctx.moveTo(cx, cy-R); ctx.lineTo(cx+R, cy); ctx.lineTo(cx, cy+R); ctx.lineTo(cx-R, cy); ctx.closePath();
+  } else if (base === "waves") {
+    for (var i = 0; i <= 40; i++) { var x = cx-R + 2*R*i/40, y = cy + Math.sin(i/40*Math.PI*3)*R*0.45; ctx[i ? "lineTo" : "moveTo"](x, y); }
+  } else if (base === "chevrons") {
+    ctx.moveTo(cx-R, cy-R*0.5); ctx.lineTo(cx, cy+R*0.5); ctx.lineTo(cx+R, cy-R*0.5);
+    ctx.moveTo(cx-R, cy-R); ctx.lineTo(cx, cy); ctx.lineTo(cx+R, cy-R);
+  } else if (base === "arches") {
+    ctx.arc(cx, cy+R*0.6, R, Math.PI, 2*Math.PI);
+  } else if (base === "rings" || base === "spiral") {
+    ctx.arc(cx, cy, R, 0, 7); ctx.moveTo(cx+R*0.6, cy); ctx.arc(cx, cy, R*0.6, 0, 7);
+    ctx.moveTo(cx+R*0.25, cy); ctx.arc(cx, cy, R*0.25, 0, 7);
+  } else if (base === "funnel") {
+    ctx.moveTo(cx-R, cy-R); ctx.lineTo(cx+R, cy-R); ctx.lineTo(cx+R*0.2, cy+R); ctx.lineTo(cx-R*0.2, cy+R); ctx.closePath();
+  } else if (base === "stairs") {
+    ctx.moveTo(cx-R, cy+R); ctx.lineTo(cx-R, cy+R*0.33); ctx.lineTo(cx-R*0.33, cy+R*0.33); ctx.lineTo(cx-R*0.33, cy-R*0.33);
+    ctx.lineTo(cx+R*0.33, cy-R*0.33); ctx.lineTo(cx+R*0.33, cy-R); ctx.lineTo(cx+R, cy-R);
+  } else if (base === "cross") {
+    ctx.moveTo(cx, cy-R); ctx.lineTo(cx, cy+R); ctx.moveTo(cx-R, cy); ctx.lineTo(cx+R, cy);
+  } else if (base === "zigzag") {
+    ctx.moveTo(cx-R, cy-R*0.6); ctx.lineTo(cx-R*0.33, cy+R*0.6); ctx.lineTo(cx+R*0.33, cy-R*0.6); ctx.lineTo(cx+R, cy+R*0.6);
+  } else if (base === "bowl") {
+    ctx.arc(cx, cy-R*0.6, R, 0, Math.PI);
+  } else if (base === "pinwheel") {
+    for (var a = 0; a < 4; a++) { var t = a*Math.PI/2;
+      ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(t)*R, cy + Math.sin(t)*R);
+      ctx.lineTo(cx + Math.cos(t+0.6)*R*0.55, cy + Math.sin(t+0.6)*R*0.55); ctx.closePath(); }
+  } else if (base === "columns") {
+    for (var c2 = -2; c2 <= 2; c2++) { ctx.moveTo(cx + c2*R*0.45, cy-R); ctx.lineTo(cx + c2*R*0.45, cy+R); }
+  }
+  ctx.stroke();
+  ctx.restore();
+}
 function draw() {
   ctx.clearRect(0, 0, cv.width, cv.height);
+  if (S.shake > 0.3) {
+    ctx.save();
+    ctx.translate((Math.random()-0.5)*S.shake, (Math.random()-0.5)*S.shake);
+    S.shake *= 0.85;
+  } else S.shake = 0;
   var b = S.board;
+  if (b) drawStyleEmblem(b.style);
   var sliding = {};
   for (var sf = 0; sf < slideFx.length; sf++) sliding[slideFx[sf].x+","+slideFx[sf].y1] = true;
   for (var key in gridMap) { if (sliding[key]) continue; var g = gridMap[key]; drawCell(g[0], g[1], g[2], (b && b.bumps[key]) || 0, b && b.jackpot && b.jackpot[0] === g[0] && b.jackpot[1] === g[1]); }
@@ -540,9 +585,10 @@ function draw() {
   ctx.fillStyle = "#2a323d"; ctx.fillRect(OX, fy, W*CS, 6);
   if (b) { ctx.fillStyle = catchFx.length ? "#ffd24a" : "#ffaf00"; ctx.fillRect(OX + (S.dock-3)*CS, fy-1, 7*CS, 8); }
   // cannon + aim
-  var cp = cellXY(25, 0);
+  var cp = cellXY(25, 0), kick = recoilT > 0 ? -Math.min(recoilT, 4) : 0;
+  if (recoilT > 0) recoilT--;
   ctx.fillStyle = "#d7dee6";
-  ctx.beginPath(); ctx.moveTo(cp[0]+CS/2-7, OY-8); ctx.lineTo(cp[0]+CS/2+7, OY-8); ctx.lineTo(cp[0]+CS/2, OY+6); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(cp[0]+CS/2-7, OY-8+kick); ctx.lineTo(cp[0]+CS/2+7, OY-8+kick); ctx.lineTo(cp[0]+CS/2, OY+6+kick); ctx.closePath(); ctx.fill();
   if (S.screen === "play" && b && !b.over && !S.playing) {
     var v = DIRS[S.aim], len = Math.hypot(v[0], v[1]);
     ctx.strokeStyle = "rgba(215,222,230,.55)"; ctx.lineWidth = 2;
@@ -581,6 +627,23 @@ function draw() {
     if (sl.t >= 1) { slideFx.splice(s2, 1); drawCell(sl.x, sl.y1, sl.sym, 0, false); continue; }
     drawCell(sl.x, sl.y0 + (sl.y1 - sl.y0)*sl.t, sl.sym, 0, false);
   }
+  // end-of-shot flourish: engine's own shot facts, one line + points
+  for (var fl = flourishFx.length-1; fl >= 0; fl--) {
+    var fe = flourishFx[fl];
+    if (fe.g !== S.gen) { flourishFx.splice(fl, 1); continue; }
+    fe.a -= 0.02;
+    if (fe.a <= 0) { flourishFx.splice(fl, 1); continue; }
+    ctx.save();
+    if (fe.a < 1) ctx.translate(0, (1-fe.a)*-18);
+    ctx.globalAlpha = Math.max(fe.a, 0);
+    ctx.font = 'bold 30px Verdana, "DejaVu Sans", sans-serif'; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#0d1117"; var cx2 = OX + W*CS/2, cy2 = OY + H*CS*0.42;
+    ctx.fillText(fe.text, cx2+2, cy2+2);
+    ctx.fillStyle = "#ffd24a"; ctx.fillText(fe.text, cx2, cy2);
+    ctx.font = 'bold 15px Verdana, "DejaVu Sans", sans-serif'; ctx.fillStyle = "#d7dee6";
+    ctx.fillText(fe.sub, cx2, cy2 + 26);
+    ctx.restore();
+  }
   // dock catch pulse
   for (var cf = catchFx.length-1; cf >= 0; cf--) {
     var f2 = catchFx[cf];
@@ -590,6 +653,7 @@ function draw() {
     ctx.strokeStyle = "rgba(255,175,0," + f2.a + ")"; ctx.lineWidth = 3;
     circ(OX + f2.x*CS + CS/2, OY + H*CS - CS/2, f2.r); ctx.stroke();
   }
+  if (S.shake) ctx.restore();
 }
 function syncGrid(grid) {
   gridMap = {};
@@ -637,18 +701,26 @@ function refreshPreview() {
 /* ---------- shot playback ---------- */
 function fire() {
   if (S.playing || !S.board || S.board.over || S.screen !== "play") return;
-  S.playing = true; pathDots = [];
+  S.playing = true; pathDots = []; recoilT = 6;
   api("/api/shot", {aim: S.aim, ball: S.ball}).then(function(resp) {
     S.ball = "n"; S.lastShot = resp.shot;
     playShot(resp, function() {
       S.board = resp.board; syncGrid(resp.board.grid); S.dock = resp.board.dock;
       S.msg = resp.message; ballPos = null; trail = [];
       if (resp.shot && resp.shot.caught) { catchFx.push({x: resp.shot.floorX, r: 6, a: 0.95, g: resp.gen}); startFxPump(); }
+      var sh = resp.shot || {}, big = null, sub = "+" + sh.points;
+      if (sh.jackpot) big = "JACKPOT";
+      else if (sh.overdrive) big = "OVERDRIVE";
+      else if (sh.paid) big = "CAUGHT IN THE DOCK";
+      else if (sh.rally >= 3) big = "RALLY x" + sh.rally;
+      else if (sh.mult >= 3) big = "STREAK x" + sh.mult;
+      if (sh.rally >= 3 && big !== "RALLY x" + sh.rally) sub += "  rally x" + sh.rally;
+      if (big) { flourishFx.push({text: big, sub: sub, a: 1, g: resp.gen}); startFxPump(); }
       api("/api/done", {gen: resp.gen, shotId: resp.shotId}).then(function(st) { S.playing = false; applyState(st); });
     });
   }).catch(function(e) { S.playing = false; S.msg = e.error || "shot refused"; renderHud(); });
 }
-function applyShotEvent(ev, gen) {
+function applyShotEvent(ev, gen, blast) {
   if (ev.e === "fall") {
     // Engine gravity moves cells exactly one row per fall event, so the
     // previous rendered position is always (x, y-1); clear it or it ghosts.
@@ -664,7 +736,8 @@ function applyShotEvent(ev, gen) {
   }
   ev.cells.forEach(function(c) {
     var key = c[0]+","+c[1];
-    if (ev.e === "pop") { popFx.push({x:c[0], y:c[1], r:6, a:0.9, g:gen}); delete gridMap[key]; }
+    if (ev.e === "pop") { popFx.push({x:c[0], y:c[1], r:6, a:0.9, g:gen}); delete gridMap[key];
+      S.shake = Math.max(S.shake || 0, (blast || c[2] === "B") ? 6 : 3); }
     else { popFx.push({x:c[0], y:c[1], r:3, a:0.5, g:gen}); delete gridMap[key]; }
   });
   startFxPump();
@@ -674,7 +747,7 @@ function startFxPump() {
   fxPump = true;
   (function pump() {
     draw();
-    if (popFx.length || slideFx.length || catchFx.length) setTimeout(pump, 50);
+    if (popFx.length || slideFx.length || catchFx.length || flourishFx.length || S.shake > 0.3) setTimeout(pump, 50);
     else fxPump = false;
   })();
 }
@@ -694,7 +767,7 @@ function playShot(resp, done) {
         if (typeof ev.d === "number") S.dock = ev.d;
         moved++;
       } else {
-        applyShotEvent(ev, resp.gen);
+        applyShotEvent(ev, resp.gen, resp.shot && resp.shot.kind === "x");
         if (ev.e !== "hit") slow = true;
       }
     }
@@ -714,6 +787,7 @@ function applyState(st) {
     popFx = popFx.filter(function(f) { return f.g === S.gen; });
     slideFx = slideFx.filter(function(f) { return f.g === S.gen; });
     catchFx = catchFx.filter(function(f) { return f.g === S.gen; });
+    flourishFx = flourishFx.filter(function(f) { return f.g === S.gen; });
   }
   show("title", st.screen === "title"); show("game", st.screen !== "title");
   if (st.screen === "title") {
@@ -942,10 +1016,12 @@ api("/api/state").then(function(st) {
   if (location.search.indexOf("selftest=1") >= 0 && location.search.indexOf("fxdemo=1") < 0) selftest();
   if (location.search.indexOf("fxdemo=1") >= 0 && location.search.indexOf("selftest=1") >= 0) {
     S.screen = "play"; S.playing = true; S.dock = 25;
-    S.board = {grid: [], bumps: {}, stock: {}, meter: 0, jackpot: null};
+    var sty = (location.search.match(/fxstyle=([a-z]+)/) || [null, "rings"])[1];
+    S.board = {grid: [], bumps: {}, stock: {}, meter: 0, jackpot: null, style: sty};
     gridMap = {"10,10": [10,10,"o"], "30,15": [30,15,"#"], "20,9": [20,9,"+"]};
     slideFx.push({x: 20, y0: 8, y1: 9, sym: "+", t: 0, g: S.gen});
     catchFx.push({x: 25, r: 6, a: 0.95, g: S.gen});
+    flourishFx.push({text: "RALLY x3", sub: "+1,240  rally x3", a: 1, g: S.gen});
     show("title", false); show("game", true);
     startFxPump();
   }

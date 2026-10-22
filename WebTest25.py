@@ -318,7 +318,8 @@ for i in range(12):
     rS = api("/api/shot?k=" + K, {"aim": 0, "ball": "n"})[1]
     st = api("/api/done?k=" + K, {"gen": rS["gen"], "shotId": rS["shotId"]})[1]
 Check("marathon loss reaches gameover", st["screen"] == "gameover" and st["result"]["kind"] == "marathonover")
-saved = open(os.environ["CHAIN_MARATHON_FILE"]).read().strip()
+with open(os.environ["CHAIN_MARATHON_FILE"]) as fh:
+    saved = fh.read().strip()
 Check("marathon best recorded", saved == str(st["result"]["bestBoards"]) + "," + str(st["result"]["bestScore"]))
 status, st = api("/api/advance?k=" + K, {})
 Check("advance starts next marathon", status == 200 and st["board"]["marathon"] and st["board"]["run"] == E.NextRunNumber(MNO) and st["board"]["k"] == 1)
