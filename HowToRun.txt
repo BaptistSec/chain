@@ -1,7 +1,9 @@
 CHAIN CH24 (work in progress, builder-reported tests)
 
 Keep ChainDemo.py, Play.bat and PlayText.bat together. Needs Python 3, standard library only.
-Linux or macOS: python3 ChainDemo.py --menu
+GRAPHICAL WEB UI (new): python3 ChainWeb.py, then play in the browser window that opens (Windows: double-click PlayWeb.bat). Mouse or arrow keys aim, click or Space fires, 1-4 pick the ball, P preview, F fast, R restart, Q menu. If no browser opens, copy the printed link into any browser on the same machine; the link's token keeps other processes out. Same rules, same run codes, same saved records as the terminal version.
+
+TERMINAL (original): python3 ChainDemo.py --menu
 Windows: double-click Play.bat. Windows is untested.
 Window: at least 104 columns by 49 rows.
 
@@ -25,6 +27,8 @@ DISPLAY: add these after the command, for example python3 ChainDemo.py --menu --
   --text: one board as plain text with no colour codes. Type an aim from 1 to 39, then optionally r or x for a Rebound or Blast ball (for example 12 r). q quits. PlayText.bat runs this.
 
 MARATHON: press M on the title screen. Boards keep coming: the quota rises every two boards (8, 8, 9, 9, 10, 10, 11, 11, then all 12 targets) and the shot limit tightens (8 shots, then 7, then 6). The first failed board ends the marathon. Your best marathon (boards cleared, then score) is saved to ChainMarathon.txt next to the game. --marathon N starts marathon N directly.
+
+TITLE MENU: use the arrow keys and Enter, or the letter shown on each line (M marathon, D daily, H how to play, Q quit). Your best run and marathon show under the menu once you have them.
 
 RUN CODES: the code printed on exit replays the run. CH21 codes (CH21R for runs) still replay on their original boards, CH23 codes (CH23R, CH23M) still replay on theirs, new codes use the tuned CH24 boards (CH24, CH24R, CH24M), and codes from CH20 and earlier are rejected. Resume with --resume CODE.
 

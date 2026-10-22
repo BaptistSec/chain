@@ -1015,7 +1015,7 @@ Colours = {
     "fall": "1;30;106",
     "pop": "1;97;41",
     "title": "1;97;44",
-    "key": "1;30;43",
+    "key": "1;38;5;220",
     "dock": "1;38;5;214",
     "dockhit": "1;30;102",
     "dim": "2",
@@ -1274,22 +1274,48 @@ def DailyLabel():
     return str(DailyRun())
 
 
-def TitleLines(screen, step, page):
+MenuEntries = [
+    ("[Enter] start a run", "run"),
+    ("[M] marathon", "marathon"),
+    ("[D] daily run", "daily"),
+    ("[H] how to play", "help"),
+    ("[Q] quit", "quit"),
+]
+
+
+def TitleLines(screen, step, page, pick=0):
     lines = [""] * 3
     for row in TitleArt:
         lines.append(" " * 24 + row)
     lines += ["", " " * 24 + "a terminal game of falling charges", ""]
     if page == "help":
-        body = Help
+        body = Premise + [""] + Help
     else:
-        body = Premise[:step]
+        body = []
     for row in body:
         lines.append(" " * 14 + row)
     lines.append("")
     if page == "help":
+        partA, partB = screen.LegendParts()
+        lines.append(" " * 14 + "Board pieces:")
+        lines.append(" " * 16 + partA)
+        lines.append(" " * 16 + partB)
+        lines.append("")
         lines.append(" " * 14 + "[any key] back")
     elif step >= len(Premise):
-        lines.append(" " * 14 + "[Enter] run   [M] marathon   [D] daily (" + DailyLabel() + ")   [H] how to play   [Q] quit")
+        pointer = "> " if screen.Plain else "\u25b8 "
+        for index, (label, action) in enumerate(MenuEntries):
+            text = " " * 14 + (pointer if index == pick else "  ") + label + (" (" + DailyLabel() + ")" if action == "daily" else "")
+            lines.append(Escape + "[7m" + text + Reset if index == pick and not screen.Mono else text)
+        lines.append("")
+        best, _ = ReadBest(BestPath())
+        mBoards, mTotal, _ = ReadMarathonBest(MarathonBestPath())
+        records = []
+        if best:
+            records.append("best run score " + str(best))
+        if mBoards:
+            records.append("best marathon " + str(mBoards) + " boards, score " + str(mTotal))
+        lines.append(" " * 14 + ("Records: " + ";  ".join(records) if records else "No records yet - finish a run or a marathon and they show here."))
         lines.append("")
         lines.append(" " * 14 + "Same local date, same starting boards. Share your run code to compare;")
         lines.append(" " * 14 + "there is no online leaderboard.")
@@ -1301,9 +1327,10 @@ def TitleLines(screen, step, page):
 
 def TitleScreen(screen, keys):
     page = "title"
-    step = len(Premise) if (screen.Reduced or screen.Mono or screen.Delay == 0) else 0
+    step = len(Premise)
+    pick = 0
     while True:
-        screen.Show(TitleLines(screen, step, page))
+        screen.Show(TitleLines(screen, step, page, pick))
         if page == "title" and step < len(Premise):
             time.sleep(0.45)
             if keys.Pressed():
@@ -1314,8 +1341,22 @@ def TitleScreen(screen, keys):
         key = keys.Read()
         if page == "help":
             page = "title"
+        elif key == "up":
+            pick = (pick - 1) % len(MenuEntries)
+        elif key == "down":
+            pick = (pick + 1) % len(MenuEntries)
         elif key in ("enter", "return", " ", "space"):
-            return random.SystemRandom().randint(1, MaxRunNumber), False
+            action = MenuEntries[pick][1]
+            if action == "run":
+                return random.SystemRandom().randint(1, MaxRunNumber), False
+            if action == "marathon":
+                return random.SystemRandom().randint(1, MaxRunNumber), True
+            if action == "daily":
+                return DailyRun(), False
+            if action == "help":
+                page = "help"
+            if action == "quit":
+                return None
         elif key == "m":
             return random.SystemRandom().randint(1, MaxRunNumber), True
         elif key == "d":
@@ -1499,9 +1540,7 @@ class Screen:
         segment = glyph * ((right - left + 1) * CellCols)
         segment = self.Paint("dockhit" if fx.get("dockhit") else "dock", segment)
         lines.append(shake + corners[2] + corners[4] * (left * CellCols) + segment + corners[4] * ((Width - 1 - right) * CellCols) + corners[3])
-        legend = " " + self.Paint("o", self.Glyph("o")) + " " + self.Paint("+", self.Glyph("+")) + " loose   " + self.Paint("#", self.Glyph("#")) + " target   " + self.Paint("J", self.Wide(self.Glyph("J"))[:1]) + " jackpot   "
-        legend += self.Paint("*", self.Glyph("*")) + (" bumper (3 hits)   " if self.Plain else " bumper (3 hits)   ") + self.Paint("B", self.Glyph("B")) + " bomb   "
-        legend += self.Paint("dock", glyph if False else ("=" if self.Plain else "\u2550")) + " dock   " + self.Paint("F", self.Glyph("F")) + " free shot   " + self.Paint("/", self.Glyph("/")) + " " + self.Paint("\\", self.Glyph("\\")) + " mirror"
+        legend = self.LegendText()
         text = message[:Width * CellCols]
         if not self.Mono and not self.Watching:
             if text.startswith("RALLY x"):
@@ -1543,6 +1582,34 @@ class Screen:
             controls = " [<][>] aim " + str(aim + 1) + "/" + str(len(Directions)) + " " + str(AimDegrees(aim)) + "deg  [Space] fire  [P] preview " + ("on" if preview else "off") + "  [F] fast " + ("on" if self.Fast else "off") + ("  [R] restart  [N] next  [Q] quit" if getattr(board, "RunInfo", None) is not None else "  [R] redo  [N] next  [Q] quit")
         lines.append(controls)
         return lines
+
+    def LegendParts(self):
+        partA = " " + self.Paint("o", self.Glyph("o")) + " " + self.Paint("+", self.Glyph("+")) + " loose   " + self.Paint("#", self.Glyph("#")) + " target   " + self.Paint("J", self.Wide(self.Glyph("J"))[:1]) + " jackpot   "
+        partA += self.Paint("*", self.Glyph("*")) + " bumper (3 hits)   " + self.Paint("B", self.Glyph("B")) + " bomb"
+        partB = " " + self.Paint("dock", "=" if self.Plain else "\u2550") + " dock   " + self.Paint("F", self.Glyph("F")) + " free shot   " + self.Paint("/", self.Glyph("/")) + " " + self.Paint("\\", self.Glyph("\\")) + " mirror"
+        return partA, partB
+
+    def LegendText(self):
+        partA, partB = self.LegendParts()
+        return partA + "   " + partB
+
+    def Panel(self, rows, rule=True):
+        # A framed, centered panel for full-screen results. rows[0] is the heading.
+        visible = [Strip.sub("", r) for r in rows]
+        inner = min(max(len(v) for v in visible) + 4, Width * CellCols - 4)
+        corners = ("+", "+", "+", "+", "-", "|") if self.Plain else ("\u250c", "\u2510", "\u2514", "\u2518", "\u2500", "\u2502")
+        pad = " " * max(0, (Width * CellCols - inner) // 2)
+        bar = corners[4] * (inner - 2)
+        out = [pad + corners[0] + bar + corners[1]]
+        for index, (row, plain) in enumerate(zip(rows, visible)):
+            out.append(pad + corners[5] + " " + row + " " * max(0, inner - 3 - len(plain)) + corners[5])
+            if rule and index == 0:
+                if self.Plain:
+                    out.append(pad + "+" + bar + "+")
+                else:
+                    out.append(pad + "\u251c" + bar + "\u2524")
+        out.append(pad + corners[2] + bar + corners[3])
+        return out
 
     def Keys_(self, line):
         if self.Mono or "[" not in line:
@@ -1977,13 +2044,13 @@ MaxShotsPerBoard = 40
 
 def DraftScreen(screen, keys, state, board):
     offer = RunOffer(state.Run, state.K)
-    lines = ["", " BOARD " + str(state.K) + " CLEARED   score " + str(board.Score), "", " Pick one upgrade: +1 charge of that ball from the next board on.", ""]
+    lines = [" BOARD " + str(state.K) + " CLEARED   score " + str(board.Score), "", " Pick one upgrade: +1 charge of that ball from the next board on.", ""]
     notes = {"r": "Rebound: bounces off the floor once", "x": "Blast: big blast, flies on", "s": "Second Chance: refunds the shot if it clears 0 or 1 target"}
     for i, c in enumerate(offer, 1):
         lines.append("  [" + str(i) + "] " + notes[c] + "  (have " + str(state.Satchel.get(c, 0)) + ", after pick " + str(state.Satchel.get(c, 0) + 1) + ")")
     lines.append("  [0] Skip: take no upgrade")
-    lines += ["", " Run code so far: " + state.Code(board), ""]
-    screen.Show(lines)
+    lines += ["", " Run code so far: " + state.Code(board)]
+    screen.Show([""] + screen.Panel(lines) + [""])
     while True:
         key = keys.Read()
         if key in ("1", "2", "3"):
@@ -2087,9 +2154,10 @@ def Run(args):
                         cleared = len(state.Boards) - 1
                         total = sum(b.Score for b in state.Boards)
                         bestLines = MarathonBestLines(*RecordMarathonBest(cleared, total))
-                        screen.Show(["", " MARATHON OVER   " + str(cleared) + (" board cleared" if cleared == 1 else " boards cleared"), " Total score " + str(total)]
-                                    + bestLines + ["", " Marathon code (replays this marathon):", " " + state.Code(), "",
-                                                   " [any key] marathon " + str(NextRunNumber(state.Run)) + "    [Q] quit"])
+                        rows = [" MARATHON OVER   " + str(cleared) + (" board cleared" if cleared == 1 else " boards cleared"), " Total score " + str(total)] \
+                            + bestLines + ["", " Marathon code (replays this marathon):", " " + state.Code(), "",
+                                           " [any key] marathon " + str(NextRunNumber(state.Run)) + "    [Q] quit"]
+                        screen.Show([""] + screen.Panel(rows) + [""])
                         if keys.Read() in ("q", "esc"):
                             break
                         state = RunState(NextRunNumber(state.Run), marathon=True)
@@ -2107,7 +2175,8 @@ def Run(args):
                         state.Boards.append(board)
                         total = sum(b.Score for b in state.Boards)
                         bestLines = BestLines(*RecordBest(total))
-                        screen.Show(["", " RUN COMPLETE   all " + str(len(RunQuotas)) + " boards cleared", " Total score " + str(total)] + bestLines + ["", " Run code (replays this run):", " " + state.Code(), "", " [any key] run " + str(NextRunNumber(state.Run)) + "    [Q] quit"])
+                        rows = [" RUN COMPLETE   all " + str(len(RunQuotas)) + " boards cleared", " Total score " + str(total)] + bestLines + ["", " Run code (replays this run):", " " + state.Code(), "", " [any key] run " + str(NextRunNumber(state.Run)) + "    [Q] quit"]
+                        screen.Show([""] + screen.Panel(rows) + [""])
                         if keys.Read() in ("q", "esc"):
                             break
                         state = RunState(NextRunNumber(state.Run))
