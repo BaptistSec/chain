@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 TMP = tempfile.mkdtemp(prefix="chainweb-")
 os.environ["CHAIN_BEST_FILE"] = os.path.join(TMP, "best.txt")
 os.environ["CHAIN_MARATHON_FILE"] = os.path.join(TMP, "marathon.txt")
+os.environ["CHAIN_SESSION_FILE"] = os.path.join(TMP, "session.json")
 
 import ChainDemo as E
 import ChainWeb as W
@@ -34,8 +35,8 @@ SERVER = W.make_server(0)
 PORT = SERVER.server_address[1]
 threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 
-def api(path, body="GET", raw=False):
-    url = "http://127.0.0.1:" + str(PORT) + path
+def api(path, body="GET", raw=False, port=None):
+    url = "http://127.0.0.1:" + str(port or PORT) + path
     if body != "GET":
         req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
     else:
@@ -441,6 +442,7 @@ def RecordStamp(path):
     return (os.path.exists(path) and (open(path).read(), os.stat(path).st_mtime_ns)) or None
 bestStamp = RecordStamp(os.environ["CHAIN_BEST_FILE"])
 marathonStamp = RecordStamp(os.environ["CHAIN_MARATHON_FILE"])
+sessStamp = RecordStamp(os.environ["CHAIN_SESSION_FILE"])
 status, w = api("/api/watch?k=" + K, {"code": "CH24R-40001-9.10.10-00-4r.10/3r.33x/30x.11r"})
 Check("watch starts on board 1", status == 200 and w["screen"] == "watch" and w["board"]["k"] == 1)
 status, r = api("/api/shot?k=" + K, {"aim": 5, "ball": "n"})
@@ -473,6 +475,7 @@ while True:
 Check("watch replays the exact code sequence", got == expected)
 Check("watch shot hashes match the engine", hash_ok)
 Check("watch writes no records", RecordStamp(os.environ["CHAIN_BEST_FILE"]) == bestStamp)
+Check("watch writes no session codes", RecordStamp(os.environ["CHAIN_SESSION_FILE"]) == sessStamp)
 
 # busy gate: a second step during a spectated shot is refused
 status, w = api("/api/watch?k=" + K, {"code": "CH24R-40001-9.10.10--7.29"})
@@ -627,6 +630,48 @@ api("/api/quit?k=" + K, {})
 Check("watch hardening wrote no records",
       RecordStamp(os.environ["CHAIN_BEST_FILE"]) == bestStamp and
       RecordStamp(os.environ["CHAIN_MARATHON_FILE"]) == marathonStamp)
+
+# the session file carries the menu's recovery codes across a server restart
+st = api("/api/state?k=" + K)[1]
+lastSeen, oldSeen = st.get("lastCode"), st.get("oldCodes")
+SERVER2 = W.make_server(0)
+threading.Thread(target=SERVER2.serve_forever, daemon=True).start()
+st2 = api("/api/state?k=" + K, port=SERVER2.server_address[1])[1]
+Check("recovery codes survive a server restart",
+      lastSeen != "" and st2.get("lastCode") == lastSeen and st2.get("oldCodes") == oldSeen)
+SERVER2.shutdown()
+SERVER2.server_close()
+
+# a corrupt session file never blocks startup: it just means no saved codes
+with open(os.environ["CHAIN_SESSION_FILE"], "w") as fh:
+    fh.write("not json {{{")
+SERVER3 = W.make_server(0)
+threading.Thread(target=SERVER3.serve_forever, daemon=True).start()
+st3 = api("/api/state?k=" + K, port=SERVER3.server_address[1])[1]
+Check("corrupt session file starts clean", st3.get("lastCode") == "" and st3.get("oldCodes") == [])
+SERVER3.shutdown()
+SERVER3.server_close()
+
+# wrong-shape json (valid parse, invalid content) is just as harmless
+with open(os.environ["CHAIN_SESSION_FILE"], "w") as fh:
+    fh.write('{"lastCode": 42, "oldCodes": {"a": 1}}')
+SERVER4 = W.make_server(0)
+threading.Thread(target=SERVER4.serve_forever, daemon=True).start()
+st4 = api("/api/state?k=" + K, port=SERVER4.server_address[1])[1]
+Check("wrong-shape session file starts clean", st4.get("lastCode") == "" and st4.get("oldCodes") == [])
+SERVER4.shutdown()
+SERVER4.server_close()
+
+# the read contract keeps exactly the last five string codes, in order
+with open(os.environ["CHAIN_SESSION_FILE"], "w") as fh:
+    fh.write('{"lastCode": "CH24R-1-9.10.10--7", "oldCodes": ["c1", 7, "c2", null, "c3", "c4", "c5", "c6", "c7", {"x": 1}]}')
+SERVER5 = W.make_server(0)
+threading.Thread(target=SERVER5.serve_forever, daemon=True).start()
+st5 = api("/api/state?k=" + K, port=SERVER5.server_address[1])[1]
+Check("session read keeps only the last five string codes",
+      st5.get("lastCode") == "CH24R-1-9.10.10--7" and st5.get("oldCodes") == ["c3", "c4", "c5", "c6", "c7"])
+SERVER5.shutdown()
+SERVER5.server_close()
 
 SERVER.shutdown()
 SERVER.server_close()

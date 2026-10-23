@@ -13,6 +13,7 @@ browser is a renderer and input device, the Python engine stays the referee.
 import json
 import os
 import secrets
+import stat
 import sys
 import threading
 import webbrowser
@@ -22,6 +23,48 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ChainDemo as E
 
 TOKEN = secrets.token_urlsafe(12)
+
+def SessionPath():
+    return os.environ.get("CHAIN_SESSION_FILE") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "ChainSession.json")
+
+def ReadSessionCodes(path):
+    """The menu's recovery codes, if a previous session saved them. Anything
+    unreadable or malformed simply means no saved codes; startup never fails."""
+    try:
+        with open(path) as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return "", []
+    if not isinstance(data, dict):
+        return "", []
+    last = data.get("lastCode", "")
+    old = data.get("oldCodes", [])
+    if not isinstance(last, str):
+        last = ""
+    if not isinstance(old, list):
+        old = []
+    return last, [c for c in old if isinstance(c, str)][-5:]
+
+def WriteSessionCodes(path, last, old):
+    folder = os.path.dirname(path) or "."
+    temp = os.path.join(folder, ".chainsess-" + os.urandom(8).hex() + ".tmp")
+    created = False
+    try:
+        if os.path.lexists(path) and not stat.S_ISREG(os.lstat(path).st_mode):
+            return False
+        descriptor = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        created = True
+        with os.fdopen(descriptor, "w") as handle:
+            handle.write(json.dumps({"lastCode": last, "oldCodes": list(old)[-5:]}) + "\n")
+        os.replace(temp, path)
+        return True
+    except OSError:
+        if created:
+            try:
+                os.unlink(temp)
+            except OSError:
+                pass
+        return False
 
 
 def BoardJson(board, state=None):
@@ -113,9 +156,15 @@ class Session:
         self.offer = None
         self.result = None
         self.message = ""
-        self.old_codes = []
-        self.last_code = ""
+        self.last_code, self.old_codes = ReadSessionCodes(SessionPath())
+        self._codes_saved = (self.last_code, tuple(self.old_codes))
         self.watch = None
+
+    def _save_codes(self):
+        snap = (self.last_code, tuple(self.old_codes))
+        if snap != self._codes_saved:
+            WriteSessionCodes(SessionPath(), self.last_code, self.old_codes)
+            self._codes_saved = snap
 
     def Records(self):
         best, _ = E.ReadBest(E.BestPath())
@@ -156,6 +205,7 @@ class Session:
             self.old_codes = []
             self.last_code = ""
             self.watch = None
+            self._save_codes()
             self.gen += 1
             self.message = ("Marathon board 1   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if marathon
                             else "Board 1 of " + str(len(E.RunQuotas)))
@@ -173,6 +223,7 @@ class Session:
             self.old_codes = []
             self.last_code = ""
             self.watch = None
+            self._save_codes()
             self.gen += 1
             self.message = "Resumed run " + str(self.state.Run)
             if self.board.Over():
@@ -405,6 +456,7 @@ class Session:
             old = self.state.Code(self.board)
             s = self.state
             self.old_codes = (self.old_codes + [old])[-5:]
+            self._save_codes()
             self.state = E.RunState(s.Run, s.Legacy, s.Marathon, s.Mid)
             self.board = E.Attach(E.RunBoard(s.Run, 1, self.state.Satchel, s.Legacy, s.Marathon, s.Mid), self.state)
             self.screen = "play"
@@ -422,6 +474,7 @@ class Session:
             code = self.state.Code(self.board) if self.state is not None and self.board is not None else ""
             if code:
                 self.last_code = code
+            self._save_codes()
             self.watch = None
             self.screen = "title"
             self.state = None

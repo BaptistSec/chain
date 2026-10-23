@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 TMP = tempfile.mkdtemp(prefix="chainweb26-")
 os.environ["CHAIN_BEST_FILE"] = os.path.join(TMP, "best.txt")
 os.environ["CHAIN_MARATHON_FILE"] = os.path.join(TMP, "marathon.txt")
+os.environ["CHAIN_SESSION_FILE"] = os.path.join(TMP, "session.json")
 os.environ["CHAIN_SELFTEST"] = "1"
 
 import ChainWeb as W
