@@ -675,6 +675,7 @@ var S = {screen:"title", board:null, aim:19, ball:"n", preview:true, fast:false,
          playing:false, msg:"", dock:25, records:null, daily:"", gen:0};
 var cv = document.getElementById("board"), ctx = cv.getContext("2d");
 var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx = [], catchFx = [], fxPump = false, flourishFx = [], recoilT = 0, shotCredits = 0, ambientT = 0, ambientOn = false, textFx = [];
+var winFx = null;
 function jackpotUp() { var b = S.board; return !!(b && b.jackpot && gridMap[b.jackpot[0]+","+b.jackpot[1]]); }
 function ambientNeeded() { return S.screen === "play" && S.board && !S.board.over && (jackpotUp() || S.board.targetsLeft === 1); }
 function ambientKick() {
@@ -691,6 +692,12 @@ function ringActive() { return !!(S.board && !S.board.over && S.board.targetsLef
 function lastTargetCells() { var out = []; for (var k in gridMap) { if (gridMap[k][2] === "#") out.push(gridMap[k]); } return out; }
 function dockPipsLeft() { return S.board ? Math.max(0, 2 - (S.board.dockPaid || 0)) : 0; }
 function popHeat(n) { return n <= 3 ? "255,210,74" : n <= 8 ? "255,175,0" : "255,95,208"; }
+function winBurst(gen) {
+  var n = 0;
+  for (var k in gridMap) { var g = gridMap[k]; popFx.push({x: g[0], y: g[1], r: 5, a: 0.85, c: "255,210,74", g: gen}); n++; }
+  winFx = {cells: n, a: 1, g: gen};
+  startFxPump();
+}
 function kindRGB(kind) { return kind === "x" ? "255,95,95" : kind === "r" ? "255,175,0" : kind === "s" ? "135,255,135" : "57,194,215"; }
 function shotTint() { return kindRGB((S.playing && S.shotKind) || "n"); }
 
@@ -894,6 +901,11 @@ function draw() {
     ctx.fillStyle = "rgba(" + fx2.rgb + ",1)"; ctx.fillText(fx2.text, tx, ty);
     ctx.restore();
   }
+  if (winFx && winFx.g === S.gen && winFx.a > 0.02) {
+    ctx.fillStyle = "rgba(255,210,74," + (0.30 * winFx.a) + ")";
+    ctx.fillRect(OX, OY, W*CS, H*CS);
+    winFx.a *= 0.93;
+  }
   // end-of-shot flourish: engine's own shot facts, one line + points
   for (var fl = flourishFx.length-1; fl >= 0; fl--) {
     var fe = flourishFx[fl];
@@ -1086,6 +1098,7 @@ function applyShotEvent(ev, gen, blast) {
     if (ev.e === "pop") { popFx.push({x:c[0], y:c[1], r:6, a:0.9, c: popHeat(SND.pops), g:gen}); delete gridMap[key];
       S.shake = Math.max(S.shake || 0, (blast || c[2] === "B") ? 6 : 3); }
     else { popFx.push({x:c[0], y:c[1], r:3, a:0.5, c: popHeat(SND.pops), g:gen}); delete gridMap[key]; }
+    if (c[2] === "#" && !winFx && S.board && S.board.targetsLeft - shotCredits <= 0) winBurst(gen);
   });
   startFxPump();
 }
@@ -1094,7 +1107,7 @@ function startFxPump() {
   fxPump = true;
   (function pump() {
     draw();
-    if (popFx.length || slideFx.length || catchFx.length || flourishFx.length || textFx.length || S.shake > 0.3) setTimeout(pump, 50);
+    if (popFx.length || slideFx.length || catchFx.length || flourishFx.length || textFx.length || (winFx && winFx.a > 0.02) || S.shake > 0.3) setTimeout(pump, 50);
     else fxPump = false;
   })();
 }
@@ -1148,6 +1161,7 @@ function applyState(st) {
     catchFx = catchFx.filter(function(f) { return f.g === S.gen; });
     flourishFx = flourishFx.filter(function(f) { return f.g === S.gen; });
     textFx = textFx.filter(function(f) { return f.g === S.gen; });
+    if (winFx && winFx.g !== S.gen) winFx = null;
   }
   show("title", st.screen === "title"); show("game", st.screen !== "title");
   if (st.screen === "title") {
@@ -1697,6 +1711,34 @@ function selftest() {
     S.aim = 8; key(" ");
     ok = await until(function() { return !S.playing; }, 20000);
     t("pulse fires when real remaining hits two", !!ok && S.board.shots === 9 && document.getElementById("stats").innerHTML.indexOf("lowshots") >= 0);
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes for the clear burst", !!ok);
+    var fillSeen = [], origFill = ctx.fillRect;
+    ctx.fillRect = function() { var cs = "" + ctx.fillStyle; if ((cs.indexOf("255, 210, 74") >= 0 || cs.indexOf("255,210,74") >= 0) && fillSeen.indexOf(cs) < 0) fillSeen.push(cs); return origFill.apply(this, arguments); };
+    S.fast = true; S.aim = 31;
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("ordinary shot does not burst", !!ok && !winFx);
+    S.aim = 4; key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    S.aim = 9; key(" ");
+    var burstCells = -1;
+    ok = await until(function() { if (winFx) burstCells = winFx.cells; return !!winFx; }, 20000);
+    ok = await until(function() { return !S.playing; }, 20000) && ok;
+    var ok2 = await until(function() { return S.board && S.board.targetsLeft === 0; }, 5000);
+    ctx.fillRect = origFill;
+    t("last target pops a gold clear burst", !!ok && !!ok2 && burstCells >= 27);
+    t("clear burst flashes the board gold", fillSeen.length >= 1);
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes for the quiet runover", !!ok);
+    S.fast = true; S.aim = 21;
+    for (var q = 0; q < 9; q++) { key(" "); ok = await until(function() { return !S.playing; }, 20000); if (!ok) break; }
+    var ok3 = await until(function() { return S.screen === "gameover"; }, 5000);
+    t("run over without a clear stays quiet", !!ok && !!ok3 && !winFx);
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
     var pre = document.createElement("pre"); pre.id = "selftest"; pre.textContent = out.join("\n");
