@@ -454,14 +454,14 @@ PAGE = r"""<!DOCTYPE html>
   /* title screen */
   #title { text-align: center; padding-top: 6vh; }
   #title h1 {
-    font-size: 84px; letter-spacing: 14px; color: var(--accent);
+    font-size: clamp(44px, 21vw, 84px); letter-spacing: clamp(6px, 3.5vw, 14px); color: var(--accent);
     text-shadow: 0 2px 0 #166070, 0 4px 12px rgba(0,0,0,.6);
     font-family: "Trebuchet MS", Verdana, sans-serif; margin-bottom: 2px;
   }
   #title .tag { color: var(--dim); margin-bottom: 34px; }
-  .menu { display: inline-block; text-align: left; }
+  .menu { display: inline-block; text-align: left; max-width: 100%; }
   .menu button {
-    display: block; width: 320px; margin: 7px 0; padding: 10px 14px;
+    display: block; width: 320px; max-width: 100%; margin: 7px 0; padding: 10px 14px;
     background: var(--panel); color: var(--text); border: 1px solid var(--edge);
     border-radius: 4px; font-size: 15px; text-align: left; cursor: pointer;
   }
@@ -472,7 +472,7 @@ PAGE = r"""<!DOCTYPE html>
   #oldcodes { margin-top: 6px; color: var(--dim); font-family: Consolas, monospace; font-size: 12px; word-break: break-all; }
   #resumeRow { margin-top: 22px; }
   #resumeRow input {
-    width: 300px; padding: 7px 9px; background: var(--panel); border: 1px solid var(--edge);
+    width: min(300px, 100%); padding: 7px 9px; background: var(--panel); border: 1px solid var(--edge);
     border-radius: 4px; color: var(--text); font-family: Consolas, monospace; font-size: 12px;
   }
   #resumeRow button { padding: 7px 12px; background: var(--panel); color: var(--accent); border: 1px solid var(--edge); border-radius: 4px; cursor: pointer; }
@@ -530,6 +530,17 @@ PAGE = r"""<!DOCTYPE html>
   }
   .sheet button:hover { border-color: var(--accent); }
   .sheet button .k { color: var(--accent); font-weight: bold; margin-right: 6px; }
+  .cue {
+    position: absolute; width: 26px; height: 26px; display: none; pointer-events: none;
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0,0,0,.55);
+  }
+  .cue.on { display: block; }
+  .cue::after {
+    content: ""; position: absolute; left: 50%; top: 44%; width: 8px; height: 8px;
+    border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent);
+    transform: translate(-50%, -50%) rotate(45deg);
+  }
   .card {
     display: inline-block; width: 176px; vertical-align: top; margin: 8px 6px 0; padding: 14px 12px;
     background: var(--panel2); border: 1px solid var(--edge); border-radius: 6px; cursor: pointer;
@@ -614,7 +625,29 @@ function api(path, body) {
     .then(function(r){ if(!r.ok) return r.json().then(function(e){throw e;}); return r.json(); });
 }
 function cellXY(x, y) { return [OX + x*CS, OY + y*CS]; }
-function show(id, on) { document.getElementById(id).classList.toggle("hidden", !on); }
+function show(id, on) {
+  document.getElementById(id).classList.toggle("hidden", !on);
+  if (on) requestAnimationFrame(refreshCues);
+}
+/* scroll affordance: an accent chevron pinned at the bottom of an overlay while
+   more content sits below; disappears at the end and when nothing overflows */
+function refreshCues() {
+  document.querySelectorAll(".overlay, .overlay-fixed").forEach(function(el) {
+    if (el.classList.contains("hidden")) return;
+    var cue = null;
+    for (var i = 0; i < el.children.length; i++) if (el.children[i].className === "cue" || el.children[i].className === "cue on") cue = el.children[i];
+    if (!cue) { cue = document.createElement("div"); cue.className = "cue"; el.appendChild(cue); }
+    var more = el.scrollHeight - el.scrollTop - el.clientHeight > 4;
+    cue.style.left = (el.scrollLeft + el.clientWidth - 40) + "px";
+    cue.style.top = (el.scrollTop + el.clientHeight - 40) + "px";
+    cue.className = more ? "cue on" : "cue";
+  });
+}
+window.addEventListener("resize", refreshCues);
+document.addEventListener("scroll", function(ev) {
+  var t = ev.target;
+  if (t && t.classList && (t.classList.contains("overlay") || t.classList.contains("overlay-fixed"))) refreshCues();
+}, true);
 
 /* ---------- sprites ---------- */
 function drawCell(x, y, sym, bumps, jackpot) {
