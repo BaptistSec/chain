@@ -485,7 +485,7 @@ PAGE = r"""<!DOCTYPE html>
   #hud .who b { color: var(--text); font-weight: normal; }
   #hud .score { font-size: 20px; color: var(--gold); font-family: Consolas, monospace; }
   #stage { position: relative; }
-  canvas#board { display: block; background: #10141a; border: 1px solid var(--edge); border-radius: 6px; }
+  canvas#board { display: block; box-sizing: content-box; background: #10141a; border: 1px solid var(--edge); border-radius: 6px; }
   #msg { min-height: 18px; padding: 5px 2px 2px; color: var(--text); }
   #msg .pts { color: var(--gold); }
   #bar { display: flex; justify-content: space-between; align-items: center; padding-top: 8px; flex-wrap: wrap; gap: 8px; }
@@ -502,15 +502,17 @@ PAGE = r"""<!DOCTYPE html>
   /* overlays */
   .overlay {
     position: absolute; inset: 0; background: rgba(16,20,26,.82);
-    display: flex; align-items: center; justify-content: center; border-radius: 6px;
+    display: flex; align-items: flex-start; justify-content: center; border-radius: 6px;
+    overflow-y: auto; overflow-x: hidden;
   }
+  .overlay .sheet { margin: auto; }
   .overlay-fixed {
     position: fixed; inset: 0; background: rgba(16,20,26,.92); z-index: 30;
     display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 4vh 12px;
   }
   .sheet {
     background: var(--panel); border: 1px solid var(--edge); border-radius: 8px;
-    padding: 26px 30px; min-width: 380px; max-width: 640px; text-align: center;
+    padding: 26px 30px; min-width: min(380px, calc(100vw - 24px)); max-width: min(640px, calc(100vw - 24px)); text-align: center;
     box-shadow: 0 10px 40px rgba(0,0,0,.5);
   }
   .sheet h2 { font-size: 22px; letter-spacing: 2px; margin-bottom: 14px; color: var(--accent); }
@@ -1096,6 +1098,11 @@ function layout() {
   CS = Math.max(12, cs);
   cv.width = 2 * OX + W * CS;
   cv.height = OY + H * CS + 12;
+  // narrow screens: scale the whole board into view instead of clipping it;
+  // pointer mapping already normalizes by the element's displayed size
+  var fit = Math.min(1, availW / cv.width);
+  cv.style.width = (cv.width * fit) + "px";
+  cv.style.height = (cv.height * fit) + "px";
   draw();
 }
 window.addEventListener("resize", layout);
