@@ -81,6 +81,7 @@ def BoardJson(board, state=None):
         "quota": getattr(board, "Quota", None),
         "total": board.Total,
         "targetsLeft": board.TargetsLeft(),
+        "dockPaid": board.DockPaid,
         "shots": len(board.Log),
         "limit": board.Limit,
         "streak": board.Streak,
@@ -670,7 +671,7 @@ var DIRS = __DIRS__;
 var S = {screen:"title", board:null, aim:19, ball:"n", preview:true, fast:false,
          playing:false, msg:"", dock:25, records:null, daily:"", gen:0};
 var cv = document.getElementById("board"), ctx = cv.getContext("2d");
-var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx = [], catchFx = [], fxPump = false, flourishFx = [], recoilT = 0, shotCredits = 0, ambientT = 0, ambientOn = false;
+var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx = [], catchFx = [], fxPump = false, flourishFx = [], recoilT = 0, shotCredits = 0, ambientT = 0, ambientOn = false, textFx = [];
 function jackpotUp() { var b = S.board; return !!(b && b.jackpot && gridMap[b.jackpot[0]+","+b.jackpot[1]]); }
 function ambientNeeded() { return S.screen === "play" && S.board && !S.board.over && (jackpotUp() || S.board.targetsLeft === 1); }
 function ambientKick() {
@@ -685,6 +686,7 @@ function ambientKick() {
 }
 function ringActive() { return !!(S.board && !S.board.over && S.board.targetsLeft === 1); }
 function lastTargetCells() { var out = []; for (var k in gridMap) { if (gridMap[k][2] === "#") out.push(gridMap[k]); } return out; }
+function dockPipsLeft() { return S.board ? Math.max(0, 2 - (S.board.dockPaid || 0)) : 0; }
 function kindRGB(kind) { return kind === "x" ? "255,95,95" : kind === "r" ? "255,175,0" : kind === "s" ? "135,255,135" : "57,194,215"; }
 function shotTint() { return kindRGB((S.playing && S.shotKind) || "n"); }
 
@@ -827,7 +829,8 @@ function draw() {
   // floor + dock
   var fy = OY + H*CS;
   ctx.fillStyle = "#2a323d"; ctx.fillRect(OX, fy, W*CS, 6);
-  if (b) { ctx.fillStyle = catchFx.length ? "#ffd24a" : "#ffaf00"; ctx.fillRect(OX + (S.dock-3)*CS, fy-1, 7*CS, 8); }
+  if (b) { ctx.fillStyle = catchFx.length ? "#ffd24a" : "#ffaf00"; ctx.fillRect(OX + (S.dock-3)*CS, fy-1, 7*CS, 8);
+      for (var dp = 0; dp < 2; dp++) { ctx.fillStyle = dp < dockPipsLeft() ? "#0d1117" : "rgba(13,17,23,.18)"; circ(OX + (S.dock - 1 + dp*2)*CS, fy+3, 2.5); ctx.fill(); } }
   // cannon + aim
   var cp = cellXY(25, 0), kick = recoilT > 0 ? -Math.min(recoilT, 4) : 0;
   if (recoilT > 0) recoilT--;
@@ -872,6 +875,20 @@ function draw() {
     sl.t += 0.34;
     if (sl.t >= 1) { slideFx.splice(s2, 1); drawCell(sl.x, sl.y1, sl.sym, 0, false); continue; }
     drawCell(sl.x, sl.y0 + (sl.y1 - sl.y0)*sl.t, sl.sym, 0, false);
+  }
+  // positional reward floaters
+  for (var tf = textFx.length-1; tf >= 0; tf--) {
+    var fx2 = textFx[tf];
+    if (fx2.g !== S.gen) { textFx.splice(tf, 1); continue; }
+    fx2.a -= 0.02; fx2.y -= 0.055;
+    if (fx2.a <= 0) { textFx.splice(tf, 1); continue; }
+    ctx.save();
+    ctx.globalAlpha = Math.max(fx2.a, 0);
+    ctx.font = 'bold 15px Verdana, "DejaVu Sans", sans-serif'; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    var tx = OX + fx2.x*CS + CS/2, ty = OY + fx2.y*CS;
+    ctx.fillStyle = "#0d1117"; ctx.fillText(fx2.text, tx+1, ty+1);
+    ctx.fillStyle = "rgba(" + fx2.rgb + ",1)"; ctx.fillText(fx2.text, tx, ty);
+    ctx.restore();
   }
   // end-of-shot flourish: engine's own shot facts, one line + points
   for (var fl = flourishFx.length-1; fl >= 0; fl--) {
@@ -1025,7 +1042,8 @@ function fire() {
     playShot(resp, function() {
       S.board = resp.board; syncGrid(resp.board.grid); S.dock = resp.board.dock;
       S.msg = resp.message; ballPos = null; trail = [];
-      if (resp.shot && resp.shot.caught) { catchFx.push({x: resp.shot.floorX, r: 6, a: 0.95, g: resp.gen}); startFxPump(); sndCatch(); }
+      if (resp.shot && resp.shot.caught) { catchFx.push({x: resp.shot.floorX, r: 6, a: 0.95, g: resp.gen}); startFxPump(); sndCatch();
+        if (resp.shot.paid) { textFx.push({x: resp.shot.floorX, y: H-2, text: "+400", rgb: "255,210,74", a: 1, g: resp.gen}); startFxPump(); } }
       var sh = resp.shot || {}, big = null, sub = "+" + sh.points;
       if (sh.jackpot) big = "JACKPOT";
       else if (sh.overdrive) big = "OVERDRIVE";
@@ -1058,6 +1076,8 @@ function applyShotEvent(ev, gen, blast) {
     var key = c[0]+","+c[1];
     if (c[2] === "#") shotCredits++;
     sndPop(SND.pops++);
+    if (c[2] === "F") textFx.push({x: c[0], y: c[1], text: "+1 shot", rgb: "135,255,135", a: 1, g: gen});
+    else if (S.board && S.board.jackpot && c[0] === S.board.jackpot[0] && c[1] === S.board.jackpot[1]) textFx.push({x: c[0], y: c[1], text: "+500", rgb: "255,95,208", a: 1, g: gen});
     if (ev.e === "pop") { popFx.push({x:c[0], y:c[1], r:6, a:0.9, g:gen}); delete gridMap[key];
       S.shake = Math.max(S.shake || 0, (blast || c[2] === "B") ? 6 : 3); }
     else { popFx.push({x:c[0], y:c[1], r:3, a:0.5, g:gen}); delete gridMap[key]; }
@@ -1069,7 +1089,7 @@ function startFxPump() {
   fxPump = true;
   (function pump() {
     draw();
-    if (popFx.length || slideFx.length || catchFx.length || flourishFx.length || S.shake > 0.3) setTimeout(pump, 50);
+    if (popFx.length || slideFx.length || catchFx.length || flourishFx.length || textFx.length || S.shake > 0.3) setTimeout(pump, 50);
     else fxPump = false;
   })();
 }
@@ -1122,6 +1142,7 @@ function applyState(st) {
     slideFx = slideFx.filter(function(f) { return f.g === S.gen; });
     catchFx = catchFx.filter(function(f) { return f.g === S.gen; });
     flourishFx = flourishFx.filter(function(f) { return f.g === S.gen; });
+    textFx = textFx.filter(function(f) { return f.g === S.gen; });
   }
   show("title", st.screen === "title"); show("game", st.screen !== "title");
   if (st.screen === "title") {
@@ -1596,6 +1617,40 @@ function selftest() {
     ok = await until(function() { return !S.playing; }, 20000);
     t("tint returns to normal after the shot", !!ok && shotTint() === "57,194,215");
     t("kind tint map", kindRGB("n") === "57,194,215" && kindRGB("r") === "255,175,0" && kindRGB("s") === "135,255,135" && kindRGB("x") === "255,95,95");
+    // reward feedback: dock pips + positional floaters
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeCode").value = "CH24R-40001-9.10.10--";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes for rewards", !!ok);
+    t("dock starts with two paying catches", dockPipsLeft() === 2 && S.board.dockPaid === 0);
+    S.fast = true; S.aim = 1;
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("paid catch floats +400 at the dock", !!ok && textFx.some(function(f) { return f.text === "+400"; }));
+    t("dock pip counts the paid catch", dockPipsLeft() === 1);
+    S.aim = 4;
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("second paid catch empties the dock", !!ok && S.board.dockPaid === 2 && dockPipsLeft() === 0);
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes for the heart", !!ok);
+    S.fast = true; S.aim = 3;
+    key(" ");
+    ok = await until(function() { return textFx.some(function(f) { return f.text === "+1 shot"; }); }, 8000);
+    t("heart pickup floats +1 shot", !!ok);
+    ok = await until(function() { return !S.playing; }, 20000);
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes for the jackpot floater", !!ok);
+    S.fast = true; S.aim = 11;
+    key(" ");
+    ok = await until(function() { return textFx.some(function(f) { return f.text === "+500"; }); }, 8000);
+    t("jackpot floats +500 at the star", !!ok);
+    ok = await until(function() { return !S.playing; }, 20000);
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
     var pre = document.createElement("pre"); pre.id = "selftest"; pre.textContent = out.join("\n");
