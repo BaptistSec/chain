@@ -54,6 +54,49 @@ def BoardJson(board, state=None):
     }
 
 
+
+def ShotData(board, state, aim, kind, gen, shot_id):
+    """One shot with the animation hook: the exact payload the client replays.
+    Shared by live play (Shoot) and spectating (WatchNext)."""
+    logBefore = len(board.Log)
+    frames = []
+    events = []
+    timeline = []
+    prev = dict(board.Grid)
+
+    def hook(x, y, cells=None, kind=None):
+        if x is None:
+            ev = {"e": kind, "cells": [[c[0], c[1], s] for c, s in sorted(cells.items())]}
+            events.append({"kind": kind, "cells": ev["cells"]})
+            timeline.append(ev)
+        else:
+            gone = [[c[0], c[1], s] for c, s in prev.items() if c not in board.Grid]
+            if gone:
+                timeline.append({"e": "hit", "cells": sorted(gone)})
+            prev.clear()
+            prev.update(board.Grid)
+            frames.append([x, y])
+            timeline.append({"b": [x, y], "d": E.DockX(board.Live.Steps + E.DockPhase * logBefore)})
+
+    shot = board.Play(aim, hook, kind)
+    return {
+        "frames": frames,
+        "events": events,
+        "timeline": timeline,
+        "gen": gen,
+        "shotId": shot_id,
+        "dockStart": E.DockX(E.DockPhase * logBefore),
+        "dockEnd": E.DockX(shot.Steps + E.DockPhase * logBefore),
+        "shot": {"aim": shot.Aim, "kind": shot.Kind, "points": shot.Points,
+                 "targets": shot.Targets, "rally": shot.Rally, "chain": shot.Chain,
+                 "mult": shot.Mult, "caught": shot.Caught, "paid": shot.Paid,
+                 "refund": shot.Refund, "overdrive": shot.Overdrive,
+                 "jackpot": shot.Jackpot, "steps": shot.Steps, "floorX": shot.FloorX},
+        "message": E.ShotMessage(board, shot),
+        "board": BoardJson(board, state),
+    }
+
+
 class Session:
     """One player's game. All rules go through the ChainDemo engine."""
 
@@ -71,6 +114,8 @@ class Session:
         self.result = None
         self.message = ""
         self.old_codes = []
+        self.last_code = ""
+        self.watch = None
 
     def Records(self):
         best, _ = E.ReadBest(E.BestPath())
@@ -83,6 +128,7 @@ class Session:
             data["records"] = self.Records()
             data["daily"] = E.DailyLabel()
             data["oldCodes"] = list(self.old_codes)
+            data["lastCode"] = self.last_code
         if self.board is not None and self.screen != "title":
             data["board"] = BoardJson(self.board, self.state)
         if self.screen == "draft":
@@ -108,6 +154,8 @@ class Session:
             self.result = None
             self.busy = False
             self.old_codes = []
+            self.last_code = ""
+            self.watch = None
             self.gen += 1
             self.message = ("Marathon board 1   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if marathon
                             else "Board 1 of " + str(len(E.RunQuotas)))
@@ -123,6 +171,8 @@ class Session:
             self.result = None
             self.busy = False
             self.old_codes = []
+            self.last_code = ""
+            self.watch = None
             self.gen += 1
             self.message = "Resumed run " + str(self.state.Run)
             if self.board.Over():
@@ -158,45 +208,108 @@ class Session:
             self.busy = True
             self.shot_seq += 1
             self.pending_shot = self.shot_seq
-            board = self.board
-            logBefore = len(board.Log)
-            frames = []
-            events = []
-            timeline = []
-            prev = dict(board.Grid)
+            return ShotData(self.board, self.state, aim, ball, self.gen, self.pending_shot), None
 
-            def hook(x, y, cells=None, kind=None):
-                if x is None:
-                    ev = {"e": kind, "cells": [[c[0], c[1], s] for c, s in sorted(cells.items())]}
-                    events.append({"kind": kind, "cells": ev["cells"]})
-                    timeline.append(ev)
-                else:
-                    gone = [[c[0], c[1], s] for c, s in prev.items() if c not in board.Grid]
-                    if gone:
-                        timeline.append({"e": "hit", "cells": sorted(gone)})
-                    prev.clear()
-                    prev.update(board.Grid)
-                    frames.append([x, y])
-                    timeline.append({"b": [x, y], "d": E.DockX(board.Live.Steps + E.DockPhase * logBefore)})
-
-            shot = board.Play(aim, hook, ball)
-            data = {
-                "frames": frames,
-                "events": events,
-                "timeline": timeline,
-                "gen": self.gen,
-                "shotId": self.pending_shot,
-                "dockStart": E.DockX(E.DockPhase * logBefore),
-                "dockEnd": E.DockX(shot.Steps + E.DockPhase * logBefore),
-                "shot": {"aim": shot.Aim, "kind": shot.Kind, "points": shot.Points,
-                         "targets": shot.Targets, "rally": shot.Rally, "chain": shot.Chain,
-                         "mult": shot.Mult, "caught": shot.Caught, "paid": shot.Paid,
-                         "refund": shot.Refund, "overdrive": shot.Overdrive,
-                         "jackpot": shot.Jackpot, "steps": shot.Steps, "floorX": shot.FloorX},
-                "message": E.ShotMessage(board, shot),
-                "board": BoardJson(board, self.state),
-            }
+    def Watch(self, code):
+        """Spectate a run code shot by shot. The whole code is validated up front
+        with the engine's own ResumeRun; play then advances lazily, one shot per
+        WatchNext, through the same ShotData payload live play uses. Watching
+        never touches records, the satchel offer, or any run in progress:
+        it only enters from the menu (or re-enters while already watching),
+        so a live run is never displaced and its recovery code stays good."""
+        with self.lock:
+            if self.screen not in ("title", "watch"):
+                return None, "finish or quit your current run before watching"
+            text = code.strip()
+            try:
+                E.ResumeRun(text)
+                run, picks, chunks, legacy, marathon, mid = E.ParseRunCodeFull(text)
+            except (ValueError, KeyError, IndexError) as exc:
+                return None, "That run code did not load: " + str(exc)
+            state = E.RunState(run, legacy, marathon, mid)
+            board = E.Attach(E.RunBoard(run, 1, state.Satchel, legacy, marathon, mid), state)
+            self.watch = {"state": state, "board": board, "picks": picks, "chunks": chunks,
+                          "legacy": legacy, "marathon": marathon, "mid": mid,
+                          "ci": 0, "si": 0, "done": False}
+            self.state = None
+            self.board = None
+            self.screen = "watch"
+            self.result = None
+            self.busy = False
+            self.gen += 1
+            self.message = "Watching " + ("marathon " if marathon else "run ") + str(run)
+            data = self.StateJson()
+            data["board"] = BoardJson(board, state)
             return data, None
+
+    def WatchNext(self):
+        """Advance the spectated run: the next shot, a board-cleared hop, or the end."""
+        with self.lock:
+            if self.screen != "watch" or self.watch is None:
+                return None, "nothing to watch"
+            if self.busy:
+                return None, "busy"
+            w = self.watch
+            if w["done"]:
+                return None, "watch is over"
+            board = w["board"]
+            state = w["state"]
+            if board.Over():
+                if board.Won() and w["ci"] < len(w["chunks"]) - 1:
+                    state.Boards.append(board)
+                    pick = w["picks"][w["ci"]]
+                    state.Picks.append(pick)
+                    if pick != "0":
+                        state.Satchel[pick] = state.Satchel.get(pick, 0) + 1
+                    cleared, score = state.K, board.Score
+                    state.K += 1
+                    w["board"] = E.Attach(E.RunBoard(state.Run, state.K, state.Satchel, w["legacy"], w["marathon"], w["mid"]), state)
+                    w["ci"] += 1
+                    w["si"] = 0
+                    data = self.StateJson()
+                    data["board"] = BoardJson(w["board"], state)
+                    data["watchAdvance"] = {"cleared": cleared, "score": score, "pick": pick}
+                    return data, None
+                if board.Won():
+                    state.Boards.append(board)
+                w["done"] = True
+                open_ = board.Won() and (w["marathon"] or state.K < len(E.RunQuotas))
+                self.message = ("Watch finished - the run continues from the code" if open_
+                                else "Watch finished - run complete, all " + str(len(state.Boards)) + " boards cleared" if board.Won()
+                                else "Watch finished - marathon over, " + str(len(state.Boards)) + " boards cleared" if w["marathon"]
+                                else "Watch finished - the run ends here")
+                data = self.StateJson()
+                data["board"] = BoardJson(board, state)
+                data["watchDone"] = {"won": board.Won(), "boardsCleared": len(state.Boards),
+                                     "total": sum(b.Score for b in state.Boards) + (0 if board.Won() else board.Score),
+                                     "marathon": w["marathon"], "open": open_}
+                data["message"] = self.message
+                return data, None
+            if w["si"] >= len(w["chunks"][w["ci"]]):
+                w["done"] = True
+                self.message = "Watch finished - the run continues from the code"
+                data = self.StateJson()
+                data["board"] = BoardJson(board, state)
+                data["watchDone"] = {"won": False, "boardsCleared": len(state.Boards),
+                                     "total": sum(b.Score for b in state.Boards) + board.Score,
+                                     "marathon": w["marathon"], "open": True}
+                data["message"] = self.message
+                return data, None
+            aim, kind = w["chunks"][w["ci"]][w["si"]]
+            w["si"] += 1
+            self.busy = True
+            self.shot_seq += 1
+            self.pending_shot = self.shot_seq
+            return ShotData(board, state, aim, kind, self.gen, self.pending_shot), None
+
+    def WatchDone(self, gen=None, shot_id=None):
+        """Client finished watching a spectated shot; releases the busy gate."""
+        with self.lock:
+            if gen != self.gen or shot_id != self.pending_shot or not self.busy:
+                return self.StateJson()
+            self.busy = False
+            self.pending_shot = 0
+            return self.StateJson()
 
     def Done(self, gen=None, shot_id=None):
         """Client finished watching the shot; only now may the next one fire.
@@ -307,6 +420,9 @@ class Session:
     def Quit(self):
         with self.lock:
             code = self.state.Code(self.board) if self.state is not None and self.board is not None else ""
+            if code:
+                self.last_code = code
+            self.watch = None
             self.screen = "title"
             self.state = None
             self.board = None
@@ -443,6 +559,7 @@ PAGE = r"""<!DOCTYPE html>
     <div id="resumeRow">
       <input id="resumeCode" placeholder="paste a run code to continue">
       <button id="resumeBtn">Continue</button>
+      <button id="watchBtn">Watch</button>
     </div>
     <div id="startErr"></div>
     <div class="foot">Same local date, same starting boards. Share your run code to compare; there is no online leaderboard.</div>
@@ -686,6 +803,14 @@ function renderHud() {
     (b.streak > 1 ? ' &nbsp; streak <b style="color:var(--good)">x' + Math.min(b.streak, 4) + "</b>" : "") +
     ' &nbsp; <span style="color:var(--dim)">od</span> ' + "#".repeat(b.meter) + "-".repeat(3 - b.meter);
   document.getElementById("score").textContent = b.score;
+  if (S.screen === "watch") {
+    document.getElementById("balls").innerHTML = '<span style="color:var(--gold)">WATCH</span>' +
+      (S.watchAuto ? ' <span style="color:var(--dim)">auto</span>' : "");
+    document.getElementById("keys").innerHTML = "<b>Space</b> next &nbsp;<b>A</b> auto &nbsp;<b>F</b> fast &nbsp;<b>Q</b> menu";
+    document.getElementById("msg").innerHTML = S.msg || "";
+    return;
+  }
+  document.getElementById("keys").innerHTML = "<b>&larr;</b><b>&rarr;</b> aim &nbsp;<b>Space</b> fire &nbsp;<b>P</b> preview &nbsp;<b>F</b> fast &nbsp;<b>R</b> restart &nbsp;<b>Q</b> menu";
   var names = {n:"normal", r:"rebound", x:"blast", s:"second chance"};
   var html = "";
   ["n","r","x","s"].forEach(function(k, i) {
@@ -706,7 +831,7 @@ function pickBall(k) {
 
 /* ---------- preview ---------- */
 function refreshPreview() {
-  if (!S.preview || !S.board || S.board.over || S.playing) { pathDots = []; draw(); return; }
+  if (!S.preview || !S.board || S.board.over || S.playing || S.screen !== "play") { pathDots = []; draw(); return; }
   api("/api/preview?aim=" + S.aim + "&ball=" + S.ball).then(function(d) { pathDots = d.path; draw(); });
 }
 
@@ -810,7 +935,8 @@ function applyState(st) {
           (r.bestMarathonBoards ? "best marathon " + r.bestMarathonBoards + " boards, " + r.bestMarathonScore : "")
         : "No records yet - finish a run or a marathon and they show here.";
     document.getElementById("daily").textContent = "(" + st.daily + ")";
-    document.getElementById("quitcode").textContent = st.quitCode ? "Run code (replays this run): " + st.quitCode : "";
+    var qc = st.quitCode || st.lastCode || "";
+    document.getElementById("quitcode").textContent = qc ? "Run code (replays this run): " + qc : "";
     document.getElementById("oldcodes").innerHTML = (st.oldCodes || []).map(function(c) { return "Before the restart: " + c; }).join("<br>");
     S.board = null; draw(); return;
   }
@@ -853,6 +979,41 @@ function renderResult(st) {
   }
   var el = document.getElementById("result"); el.innerHTML = html;
   el.querySelectorAll("[data-go]").forEach(function(n) { n.onclick = function() { go(n.dataset.go); }; });
+}
+function startWatch(st) {
+  S.preview = false; S.watchAuto = false; S.aim = 19; S.ball = "n"; ballPos = null; trail = [];
+  applyState(st);
+}
+function watchStep() {
+  if (S.playing || S.screen !== "watch") return;
+  S.playing = true;
+  api("/api/watchnext", {}).then(function(resp) {
+    if (resp.watchAdvance) {
+      S.playing = false;
+      S.board = resp.board; syncGrid(resp.board.grid); S.dock = resp.board.dock;
+      S.msg = "Board " + resp.watchAdvance.cleared + " cleared, score " + resp.watchAdvance.score +
+              (resp.watchAdvance.pick === "0" ? "" : " - +1 " + resp.watchAdvance.pick);
+      draw(); renderHud();
+      if (S.watchAuto) setTimeout(watchStep, S.fast ? 300 : 800);
+      return;
+    }
+    if (resp.watchDone) {
+      S.playing = false; S.watchAuto = false;
+      S.board = resp.board; syncGrid(resp.board.grid); S.dock = resp.board.dock;
+      S.msg = resp.message || "Watch finished";
+      draw(); renderHud();
+      return;
+    }
+    S.lastShot = resp.shot;
+    playShot(resp, function() {
+      S.board = resp.board; syncGrid(resp.board.grid); S.dock = resp.board.dock;
+      S.msg = resp.message; ballPos = null; trail = [];
+      S.playing = false;
+      draw(); renderHud();
+      api("/api/watchdone", {gen: resp.gen, shotId: resp.shotId});
+      if (S.watchAuto) setTimeout(watchStep, S.fast ? 250 : 600);
+    });
+  }).catch(function(e) { S.playing = false; S.watchAuto = false; S.msg = e.error || "watch step refused"; renderHud(); });
 }
 function go(what) {
   if (what === "advance") api("/api/advance", {}).then(applyState);
@@ -910,6 +1071,13 @@ document.addEventListener("keydown", function(ev) {
     else if ((k === "r" || k === "R") && S.screen === "gameover") go("restart");
     return;
   }
+  if (S.screen === "watch") {
+    if (k === " " || k === "Enter") { watchStep(); ev.preventDefault(); }
+    else if (k === "a" || k === "A") { S.watchAuto = !S.watchAuto; renderHud(); if (S.watchAuto) watchStep(); }
+    else if (k === "f" || k === "F") { S.fast = !S.fast; }
+    else if (k === "q" || k === "Q" || k === "Escape") { S.watchAuto = false; api("/api/quit", {}).then(applyState); }
+    return;
+  }
   if (k === "ArrowLeft" || k === "a") { S.aim = Math.max(0, S.aim - 1); refreshPreview(); draw(); ev.preventDefault(); }
   else if (k === "ArrowRight" || k === "d") { S.aim = Math.min(DIRS.length - 1, S.aim + 1); refreshPreview(); draw(); ev.preventDefault(); }
   else if (k === " " || k === "Enter") { fire(); ev.preventDefault(); }
@@ -951,6 +1119,12 @@ document.getElementById("menu").addEventListener("click", function(ev) {
   if (act === "help") showHelp();
   else start(act);
 });
+document.getElementById("watchBtn").onclick = function() {
+  var code = document.getElementById("resumeCode").value.trim();
+  document.getElementById("startErr").textContent = "";
+  api("/api/watch", {code: code}).then(startWatch)
+    .catch(function(e) { document.getElementById("startErr").textContent = e.error || "could not watch"; });
+};
 document.getElementById("resumeBtn").onclick = function() {
   var code = document.getElementById("resumeCode").value.trim();
   if (!code) return;
@@ -1122,6 +1296,17 @@ class Handler(BaseHTTPRequestHandler):
             data, err = sess.Start(body.get("mode", ""))
         elif path == "/api/resume":
             data, err = sess.Resume(str(body.get("code", "")))
+        elif path == "/api/watch":
+            data, err = sess.Watch(str(body.get("code", "")))
+        elif path == "/api/watchnext":
+            data, err = sess.WatchNext()
+            if err == "busy":
+                return self.fail("busy", 409)
+        elif path == "/api/watchdone":
+            gen = body.get("gen")
+            sid = body.get("shotId")
+            data, err = sess.WatchDone(gen if isinstance(gen, int) else None,
+                                       sid if isinstance(sid, int) else None), None
         elif path == "/api/shot":
             data, err = sess.Shoot(body.get("aim"), body.get("ball", "n"))
             if err == "busy":

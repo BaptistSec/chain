@@ -435,6 +435,199 @@ Check("valid resume loads for the clear test", status == 200 and st["screen"] ==
 st = api("/api/quit?k=" + K, {})[1]
 Check("valid resume clears kept codes", st.get("oldCodes") == [])
 
+# watch mode: spectate a run code through the same shot payload as live play,
+# cross-checked shot by shot against an independent engine replay
+def RecordStamp(path):
+    return (os.path.exists(path) and (open(path).read(), os.stat(path).st_mtime_ns)) or None
+bestStamp = RecordStamp(os.environ["CHAIN_BEST_FILE"])
+marathonStamp = RecordStamp(os.environ["CHAIN_MARATHON_FILE"])
+status, w = api("/api/watch?k=" + K, {"code": "CH24R-40001-9.10.10-00-4r.10/3r.33x/30x.11r"})
+Check("watch starts on board 1", status == 200 and w["screen"] == "watch" and w["board"]["k"] == 1)
+status, r = api("/api/shot?k=" + K, {"aim": 5, "ball": "n"})
+Check("play inputs refused during watch", status == 400)
+eState = E.RunState(40001)
+eBoard = E.Attach(E.RunBoard(40001, 1, eState.Satchel, False, False, False), eState)
+expected = [("shot", 4, "r"), ("shot", 10, "n"), ("advance", 1, "0"),
+            ("shot", 3, "r"), ("shot", 33, "x"), ("advance", 2, "0"),
+            ("shot", 30, "x"), ("shot", 11, "r"), ("done", True, 9295)]
+got = []
+hash_ok = True
+while True:
+    status, d = api("/api/watchnext?k=" + K, {})
+    if "frames" in d:
+        got.append(("shot", d["shot"]["aim"], d["shot"]["kind"]))
+        eBoard.Play(d["shot"]["aim"], None, d["shot"]["kind"])
+        hash_ok = hash_ok and d["board"]["hash"] == eBoard.Hash()
+        api("/api/watchdone?k=" + K, {"gen": d["gen"], "shotId": d["shotId"]})
+        if eBoard.Over() and eBoard.Won() and eState.K < len(E.RunQuotas):
+            eState.Boards.append(eBoard)
+            eState.Picks.append("0")
+            eState.K += 1
+            eBoard = E.Attach(E.RunBoard(40001, eState.K, eState.Satchel, False, False, False), eState)
+    elif "watchAdvance" in d:
+        got.append(("advance", d["watchAdvance"]["cleared"], d["watchAdvance"]["pick"]))
+    else:
+        eState.Boards.append(eBoard)
+        got.append(("done", d["watchDone"]["won"], d["watchDone"]["total"]))
+        break
+Check("watch replays the exact code sequence", got == expected)
+Check("watch shot hashes match the engine", hash_ok)
+Check("watch writes no records", RecordStamp(os.environ["CHAIN_BEST_FILE"]) == bestStamp)
+
+# busy gate: a second step during a spectated shot is refused
+status, w = api("/api/watch?k=" + K, {"code": "CH24R-40001-9.10.10--7.29"})
+status, d = api("/api/watchnext?k=" + K, {})
+status2, r = api("/api/watchnext?k=" + K, {})
+Check("watch busy gate refuses a concurrent step", status2 == 409)
+api("/api/watchdone?k=" + K, {"gen": d["gen"], "shotId": d["shotId"]})
+
+# a mid-board quit code ends open: the run continues from the code
+while True:
+    status, d = api("/api/watchnext?k=" + K, {})
+    if "frames" in d:
+        api("/api/watchdone?k=" + K, {"gen": d["gen"], "shotId": d["shotId"]})
+    else:
+        break
+Check("mid-board quit code ends open", d["watchDone"]["open"] is True)
+
+# a won-board quit-at-draft code also ends open, with the cleared board counted
+status, w = api("/api/watch?k=" + K, {"code": "CH24R-40001-9.10.10--7.29.25.9"})
+while True:
+    status, d = api("/api/watchnext?k=" + K, {})
+    if "frames" in d:
+        api("/api/watchdone?k=" + K, {"gen": d["gen"], "shotId": d["shotId"]})
+    else:
+        break
+Check("won-board quit code ends open with the board counted",
+      d["watchDone"]["open"] is True and d["watchDone"]["boardsCleared"] == 1 and d["watchDone"]["total"] == 6030)
+
+# marathon loss watched to the end; records untouched
+status, w = api("/api/watch?k=" + K, {"code": "CH24M-40003--0.0.0.0.0.0.0.0"})
+Check("marathon watch starts", status == 200 and w["board"]["marathon"] is True)
+while True:
+    status, d = api("/api/watchnext?k=" + K, {})
+    if "frames" in d:
+        api("/api/watchdone?k=" + K, {"gen": d["gen"], "shotId": d["shotId"]})
+    else:
+        break
+Check("marathon watch ends over with nothing cleared",
+      d["watchDone"]["open"] is False and d["watchDone"]["boardsCleared"] == 0 and d["watchDone"]["marathon"] is True)
+Check("marathon watch writes no records", RecordStamp(os.environ["CHAIN_MARATHON_FILE"]) == marathonStamp)
+
+status, r = api("/api/watch?k=" + K, {"code": "CH24R-9-9.9.9-zzz"})
+Check("bad watch code rejected", status == 400)
+status, st = api("/api/quit?k=" + K, {})
+Check("watch exits to title", status == 200 and st["screen"] == "title")
+
+
+# --- watch hardening pins ---
+# WatchDone binds gen + shot id like live Done: stale or id-less calls must not
+# release the busy gate; only the exact pair does
+status, w = api("/api/watch?k=" + K, {"code": "CH24M-40003--0.0.0.0.0.0.0.0"})
+status, d = api("/api/watchnext?k=" + K, {})
+Check("watch shot started for done-binding pins", status == 200 and "frames" in d)
+api("/api/watchdone?k=" + K, {"gen": d["gen"] + 1, "shotId": d["shotId"]})
+status2, r = api("/api/watchnext?k=" + K, {})
+Check("watchdone with a wrong gen keeps the busy gate (409)", status2 == 409)
+api("/api/watchdone?k=" + K, {"gen": d["gen"], "shotId": d["shotId"] + 1})
+status2, r = api("/api/watchnext?k=" + K, {})
+Check("watchdone with a wrong shot id keeps the busy gate (409)", status2 == 409)
+api("/api/watchdone?k=" + K, {})
+status2, r = api("/api/watchnext?k=" + K, {})
+Check("watchdone without ids keeps the busy gate (409)", status2 == 409)
+api("/api/watchdone?k=" + K, {"gen": d["gen"], "shotId": d["shotId"]})
+status2, d2 = api("/api/watchnext?k=" + K, {})
+Check("matching watchdone releases the gate", status2 == 200 and "frames" in d2)
+api("/api/watchdone?k=" + K, {"gen": d2["gen"], "shotId": d2["shotId"]})
+api("/api/quit?k=" + K, {})
+
+# parse-valid but replay-invalid codes are rejected atomically: Watch validates
+# with the engine's own ResumeRun before touching any session state
+BAD1 = "CH24R-40001-9.10.10-0-0/0"               # board 1 not won, yet a second chunk follows
+BAD2 = "CH24R-40001-9.10.10-0-4r.10.10/30x.11r"  # shots continue after board 1 ended
+fixtureOk = True
+for bad in (BAD1, BAD2):
+    try:
+        E.ParseRunCodeFull(bad)
+    except ValueError:
+        fixtureOk = False
+    try:
+        E.ResumeRun(bad)
+        fixtureOk = False
+    except ValueError:
+        pass
+Check("replay-invalid fixtures parse but fail engine replay", fixtureOk)
+st0 = api("/api/state?k=" + K)[1]
+status, r = api("/api/watch?k=" + K, {"code": BAD1})
+Check("unwon-board code rejected", status == 400)
+status, r = api("/api/watch?k=" + K, {"code": BAD2})
+Check("shots-after-board-end code rejected", status == 400)
+st1 = api("/api/state?k=" + K)[1]
+Check("rejected watch leaves the session untouched",
+      st1["screen"] == "title" and st1["gen"] == st0["gen"] and "board" not in st1)
+
+# a pick-bearing marathon code: the recorded pick must drive the next board
+PICK_CODE = "CH24M-40003-s-38r.2/20"
+status, w = api("/api/watch?k=" + K, {"code": PICK_CODE})
+Check("pick-bearing marathon watch starts", status == 200 and w["board"]["marathon"] is True)
+eState = E.RunState(40003, marathon=True)
+eBoard = E.Attach(E.RunBoard(40003, 1, eState.Satchel, False, True, False), eState)
+hash_ok = True
+sawAdvance = False
+while True:
+    status, d = api("/api/watchnext?k=" + K, {})
+    if "frames" in d:
+        eBoard.Play(d["shot"]["aim"], None, d["shot"]["kind"])
+        hash_ok = hash_ok and d["board"]["hash"] == eBoard.Hash()
+        api("/api/watchdone?k=" + K, {"gen": d["gen"], "shotId": d["shotId"]})
+        if eBoard.Over() and eBoard.Won():
+            eState.Boards.append(eBoard)
+            eState.Picks.append("s")
+            eState.Satchel["s"] = eState.Satchel.get("s", 0) + 1
+            eState.K += 1
+            eBoard = E.Attach(E.RunBoard(40003, eState.K, eState.Satchel, False, True, False), eState)
+    elif "watchAdvance" in d:
+        sawAdvance = True
+        Check("recorded pick drives the advance", d["watchAdvance"]["pick"] == "s")
+        Check("picked ball reaches the next board's stock", d["board"]["stock"].get("s", 0) == 1)
+        hash_ok = hash_ok and d["board"]["hash"] == eBoard.Hash()
+    else:
+        Check("pick-bearing marathon ends open", d["watchDone"]["open"] is True and d["watchDone"]["marathon"] is True)
+        break
+Check("pick-bearing marathon hashes match the engine", hash_ok and sawAdvance)
+api("/api/quit?k=" + K, {})
+
+# watch is menu-only: a live run is never displaced and its recovery stays good
+status, st = api("/api/resume?k=" + K, {"code": "CH24R-40001-9.10.10--7.29"})
+Check("live run loaded for the guard pins", status == 200 and st["screen"] == "play")
+liveCode = st["board"]["code"]
+status, r = api("/api/watch?k=" + K, {"code": "CH24R-40001-9.10.10-00-4r.10/3r.33x/30x.11r"})
+Check("watch refused while a run is live", status == 400)
+st = api("/api/state?k=" + K)[1]
+Check("live run intact after the refused watch", st["screen"] == "play" and st["board"]["code"] == liveCode)
+q = api("/api/quit?k=" + K, {})[1]
+Check("recovery code still issued for the live run", q.get("quitCode") == liveCode)
+status, st = api("/api/resume?k=" + K, {"code": liveCode})
+Check("the live run still resumes from its code", status == 200 and st["screen"] == "play" and st["board"]["code"] == liveCode)
+api("/api/quit?k=" + K, {})
+
+# the menu keeps the last recovery code across a watch: spectating can never
+# strand the run the player just quit
+st = api("/api/state?k=" + K)[1]
+Check("menu shows the last recovery code", st.get("lastCode") == liveCode)
+status, w = api("/api/watch?k=" + K, {"code": "CH24M-40003--0.0.0.0.0.0.0.0"})
+Check("watch starts from the menu", status == 200 and w["screen"] == "watch")
+q2 = api("/api/quit?k=" + K, {})[1]
+Check("quitting a watch issues no code of its own", q2.get("quitCode") == "")
+st = api("/api/state?k=" + K)[1]
+Check("recovery code survives a watch", st.get("lastCode") == liveCode)
+status, st = api("/api/resume?k=" + K, {"code": liveCode})
+Check("preserved code resumes after watching", status == 200 and st["screen"] == "play")
+api("/api/quit?k=" + K, {})
+Check("watch hardening wrote no records",
+      RecordStamp(os.environ["CHAIN_BEST_FILE"]) == bestStamp and
+      RecordStamp(os.environ["CHAIN_MARATHON_FILE"]) == marathonStamp)
+
 SERVER.shutdown()
 SERVER.server_close()
 print("FAILS", len(Fails))
