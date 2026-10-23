@@ -385,6 +385,56 @@ Check("resumed won board refuses shots from draft", status == 400 and st["screen
 status, st = api("/api/quit?k=" + K, {})
 Check("quit returns to title with code", status == 200 and st["screen"] == "title" and st["quitCode"].startswith("CH24R-"))
 
+# restart keeps the abandoned run's code reachable (terminal parity: old codes at quit)
+st = api("/api/start?k=" + K, {"mode": "run"})[1]
+rS = api("/api/shot?k=" + K, {"aim": 19, "ball": "n"})[1]
+st = api("/api/done?k=" + K, {"gen": rS["gen"], "shotId": rS["shotId"]})[1]
+first = st["board"]["code"]
+status, r = api("/api/restart?k=" + K, {})
+Check("restart returns the abandoned code", status == 200 and r.get("oldCode") == first)
+Check("restart message points at the menu", "menu" in r.get("message", ""))
+rS = api("/api/shot?k=" + K, {"aim": 20, "ball": "n"})[1]
+st = api("/api/done?k=" + K, {"gen": rS["gen"], "shotId": rS["shotId"]})[1]
+second = st["board"]["code"]
+Check("two abandoned codes differ", first != second)
+api("/api/restart?k=" + K, {})
+status, st = api("/api/quit?k=" + K, {})
+Check("title lists both abandoned codes in order", st.get("oldCodes") == [first, second])
+Check("title still shows the current code", st.get("quitCode", "").startswith("CH24R-"))
+api("/api/start?k=" + K, {"mode": "run"})
+st = api("/api/quit?k=" + K, {})[1]
+Check("a new run clears abandoned codes", st.get("oldCodes") == [])
+
+# retention lifecycle pins (mutant targets: dropping the [-5:] cap or the Resume
+# reset must each fail exactly one of these)
+st = api("/api/start?k=" + K, {"mode": "run"})[1]
+kept = []
+for i in range(7):
+    rS = api("/api/shot?k=" + K, {"aim": 10 + i, "ball": "n"})[1]
+    st = api("/api/done?k=" + K, {"gen": rS["gen"], "shotId": rS["shotId"]})[1]
+    kept.append(st["board"]["code"])
+    api("/api/restart?k=" + K, {})
+st = api("/api/quit?k=" + K, {})[1]
+Check("retention caps at the five most recent", st.get("oldCodes") == kept[-5:])
+api("/api/start?k=" + K, {"mode": "run"})
+rS = api("/api/shot?k=" + K, {"aim": 19, "ball": "n"})[1]
+st = api("/api/done?k=" + K, {"gen": rS["gen"], "shotId": rS["shotId"]})[1]
+one = st["board"]["code"]
+api("/api/restart?k=" + K, {})
+status, r = api("/api/resume?k=" + K, {"code": "CH24R-9-9.9.9-zzz"})
+Check("invalid resume still rejected", status == 400)
+st = api("/api/quit?k=" + K, {})[1]
+Check("invalid resume preserves kept codes", st.get("oldCodes") == [one])
+api("/api/start?k=" + K, {"mode": "run"})
+rS = api("/api/shot?k=" + K, {"aim": 19, "ball": "n"})[1]
+st = api("/api/done?k=" + K, {"gen": rS["gen"], "shotId": rS["shotId"]})[1]
+one = st["board"]["code"]
+api("/api/restart?k=" + K, {})
+status, st = api("/api/resume?k=" + K, {"code": "CH24R-40001-9.10.10--7.29"})
+Check("valid resume loads for the clear test", status == 200 and st["screen"] == "play")
+st = api("/api/quit?k=" + K, {})[1]
+Check("valid resume clears kept codes", st.get("oldCodes") == [])
+
 SERVER.shutdown()
 SERVER.server_close()
 print("FAILS", len(Fails))

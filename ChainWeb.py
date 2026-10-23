@@ -70,6 +70,7 @@ class Session:
         self.offer = None
         self.result = None
         self.message = ""
+        self.old_codes = []
 
     def Records(self):
         best, _ = E.ReadBest(E.BestPath())
@@ -81,6 +82,7 @@ class Session:
         if self.screen == "title":
             data["records"] = self.Records()
             data["daily"] = E.DailyLabel()
+            data["oldCodes"] = list(self.old_codes)
         if self.board is not None and self.screen != "title":
             data["board"] = BoardJson(self.board, self.state)
         if self.screen == "draft":
@@ -105,6 +107,7 @@ class Session:
             self.screen = "play"
             self.result = None
             self.busy = False
+            self.old_codes = []
             self.gen += 1
             self.message = ("Marathon board 1   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if marathon
                             else "Board 1 of " + str(len(E.RunQuotas)))
@@ -119,6 +122,7 @@ class Session:
             self.screen = "play"
             self.result = None
             self.busy = False
+            self.old_codes = []
             self.gen += 1
             self.message = "Resumed run " + str(self.state.Run)
             if self.board.Over():
@@ -287,14 +291,15 @@ class Session:
                 return None, "no run to restart"
             old = self.state.Code(self.board)
             s = self.state
+            self.old_codes = (self.old_codes + [old])[-5:]
             self.state = E.RunState(s.Run, s.Legacy, s.Marathon, s.Mid)
             self.board = E.Attach(E.RunBoard(s.Run, 1, self.state.Satchel, s.Legacy, s.Marathon, s.Mid), self.state)
             self.screen = "play"
             self.result = None
             self.busy = False
             self.gen += 1
-            self.message = ("Marathon restarted from board 1, score and satchel reset" if s.Marathon
-                            else "Run restarted from board 1, score and satchel reset")
+            self.message = ("Marathon restarted from board 1, score and satchel reset. The old marathon code shows on the menu." if s.Marathon
+                            else "Run restarted from board 1, score and satchel reset. The old run code shows on the menu.")
             data = self.StateJson()
             data["oldCode"] = old
             return data, None
@@ -348,6 +353,7 @@ PAGE = r"""<!DOCTYPE html>
   .menu .k { color: var(--accent); font-weight: bold; margin-right: 10px; }
   #records { margin-top: 26px; color: var(--gold); }
   #quitcode { margin-top: 14px; color: var(--dim); font-family: Consolas, monospace; font-size: 12px; word-break: break-all; }
+  #oldcodes { margin-top: 6px; color: var(--dim); font-family: Consolas, monospace; font-size: 12px; word-break: break-all; }
   #resumeRow { margin-top: 22px; }
   #resumeRow input {
     width: 300px; padding: 7px 9px; background: var(--panel); border: 1px solid var(--edge);
@@ -433,6 +439,7 @@ PAGE = r"""<!DOCTYPE html>
     </div>
     <div id="records"></div>
     <div id="quitcode"></div>
+    <div id="oldcodes"></div>
     <div id="resumeRow">
       <input id="resumeCode" placeholder="paste a run code to continue">
       <button id="resumeBtn">Continue</button>
@@ -804,6 +811,7 @@ function applyState(st) {
         : "No records yet - finish a run or a marathon and they show here.";
     document.getElementById("daily").textContent = "(" + st.daily + ")";
     document.getElementById("quitcode").textContent = st.quitCode ? "Run code (replays this run): " + st.quitCode : "";
+    document.getElementById("oldcodes").innerHTML = (st.oldCodes || []).map(function(c) { return "Before the restart: " + c; }).join("<br>");
     S.board = null; draw(); return;
   }
   if (st.board) { S.board = st.board; if (!S.playing) { syncGrid(st.board.grid); S.dock = st.board.dock; } }
