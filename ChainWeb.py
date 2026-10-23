@@ -498,6 +498,9 @@ PAGE = r"""<!DOCTYPE html>
   #balls .ball.empty { opacity: .38; cursor: default; }
   #keys { color: var(--dim); font-size: 12px; }
   #keys b { color: var(--accent); font-weight: bold; }
+  #keys .tc { display: none; }
+  #balls .wc { display: none; }
+  @media (pointer: coarse) { #keys .kb { display: none; } #keys .tc { display: inline; } #balls .wc { display: inline; } }
 
   /* overlays */
   .overlay {
@@ -581,7 +584,7 @@ PAGE = r"""<!DOCTYPE html>
     <div id="msg"></div>
     <div id="bar">
       <span id="balls"></span>
-      <span id="keys"><b>&larr;</b><b>&rarr;</b> aim &nbsp;<b>Space</b> fire &nbsp;<b>P</b> preview &nbsp;<b>F</b> fast &nbsp;<b>R</b> restart &nbsp;<b>Q</b> menu</span>
+      <span id="keys"><span class="kb"><b>&larr;</b><b>&rarr;</b> aim &nbsp;<b>Space</b> fire &nbsp;<b>P</b> preview &nbsp;<b>F</b> fast &nbsp;<b>R</b> restart &nbsp;<b>Q</b> menu</span><span class="tc"><b>drag</b> aim &nbsp;<b>tap</b> fire</span></span>
     </div>
   </div>
 
@@ -807,12 +810,17 @@ function renderHud() {
   document.getElementById("score").textContent = b.score;
   if (S.screen === "watch") {
     document.getElementById("balls").innerHTML = '<span style="color:var(--gold)">WATCH</span>' +
-      (S.watchAuto ? ' <span style="color:var(--dim)">auto</span>' : "");
-    document.getElementById("keys").innerHTML = "<b>Space</b> next &nbsp;<b>A</b> auto &nbsp;<b>F</b> fast &nbsp;<b>Q</b> menu";
+      (S.watchAuto ? ' <span style="color:var(--dim)">auto</span>' : "") +
+      '<span class="wc"><span class="ball" data-watch="next"><span class="k">next</span></span>' +
+      '<span class="ball" data-watch="auto"><span class="k">auto</span></span>' +
+      '<span class="ball" data-watch="menu"><span class="k">menu</span></span></span>';
+    document.getElementById("keys").innerHTML = '<span class="kb"><b>Space</b> next &nbsp;<b>A</b> auto &nbsp;<b>F</b> fast &nbsp;<b>Q</b> menu</span><span class="tc"><b>watching</b> replay</span>';
+    var wchips = document.querySelectorAll("#balls .ball[data-watch]");
+    for (var w = 0; w < wchips.length; w++) wchips[w].onclick = function() { watchTap(this.dataset.watch); };
     document.getElementById("msg").innerHTML = S.msg || "";
     return;
   }
-  document.getElementById("keys").innerHTML = "<b>&larr;</b><b>&rarr;</b> aim &nbsp;<b>Space</b> fire &nbsp;<b>P</b> preview &nbsp;<b>F</b> fast &nbsp;<b>R</b> restart &nbsp;<b>Q</b> menu";
+  document.getElementById("keys").innerHTML = '<span class="kb"><b>&larr;</b><b>&rarr;</b> aim &nbsp;<b>Space</b> fire &nbsp;<b>P</b> preview &nbsp;<b>F</b> fast &nbsp;<b>R</b> restart &nbsp;<b>Q</b> menu</span><span class="tc"><b>drag</b> aim &nbsp;<b>tap</b> fire</span>';
   var names = {n:"normal", r:"rebound", x:"blast", s:"second chance"};
   var html = "";
   ["n","r","x","s"].forEach(function(k, i) {
@@ -986,6 +994,13 @@ function startWatch(st) {
   S.preview = false; S.watchAuto = false; S.aim = 19; S.ball = "n"; ballPos = null; trail = [];
   applyState(st);
 }
+/* touch watch controls: same actions and guards as the Space/A/Q keys */
+function watchTap(act) {
+  if (S.screen !== "watch") return;
+  if (act === "next") watchStep();
+  else if (act === "auto") { S.watchAuto = !S.watchAuto; renderHud(); if (S.watchAuto) watchStep(); }
+  else if (act === "menu") { S.watchAuto = false; api("/api/quit", {}).then(applyState); }
+}
 function watchStep() {
   if (S.playing || S.screen !== "watch") return;
   S.playing = true;
@@ -1040,7 +1055,7 @@ function helpHtml() {
     '<span style="color:#5fd787">&#9673;</span> bumper (3 hits) &nbsp;<span style="color:#ff5f5f">&#10041;</span> bomb &nbsp;' +
     '<span style="color:#ffaf00">&#9644;</span> dock &nbsp;<span style="color:#87ff87">&#9829;</span> free shot &nbsp;' +
     '<span style="color:#c8ccd2">&#9585;&#9586;</span> mirror</p>' +
-    "<h3>Controls</h3><p><b>&larr; &rarr;</b> or mouse aim &nbsp; <b>Space</b> or click fire &nbsp; <b>1-4</b> ball &nbsp; <b>P</b> preview &nbsp; <b>F</b> fast &nbsp; <b>R</b> restart &nbsp; <b>Q</b> menu</p>" +
+    "<h3>Controls</h3><p><b>&larr; &rarr;</b>, mouse or drag to aim &nbsp; <b>Space</b>, click or tap to fire &nbsp; <b>1-4</b> ball &nbsp; <b>P</b> preview &nbsp; <b>F</b> fast &nbsp; <b>R</b> restart &nbsp; <b>Q</b> menu</p>" +
     '<div class="row"><button onclick="hideHelp()"><span class="k">Esc</span>back</button></div></div>';
 }
 function showHelp() { var el = document.getElementById("helpOv"); el.innerHTML = helpHtml(); show("helpOv", true); }
@@ -1106,10 +1121,10 @@ function layout() {
   draw();
 }
 window.addEventListener("resize", layout);
-cv.addEventListener("mousemove", function(ev) {
+function aimFromPoint(px, py) {
   if (S.playing || !S.board || S.board.over || S.screen !== "play") return;
   var r = cv.getBoundingClientRect();
-  var mx = (ev.clientX - r.left) * (cv.width / r.width), my = (ev.clientY - r.top) * (cv.height / r.height);
+  var mx = (px - r.left) * (cv.width / r.width), my = (py - r.top) * (cv.height / r.height);
   var cx = OX + 25*CS + CS/2, cy = OY;
   var best = 0, bd = 1e9;
   for (var i = 0; i < DIRS.length; i++) {
@@ -1118,8 +1133,45 @@ cv.addEventListener("mousemove", function(ev) {
     if (d < bd) { bd = d; best = i; }
   }
   if (best !== S.aim) { S.aim = best; refreshPreview(); draw(); }
-});
+}
+cv.addEventListener("mousemove", function(ev) { aimFromPoint(ev.clientX, ev.clientY); });
 cv.addEventListener("click", function() { if (S.screen === "play") fire(); });
+/* touch: a drag aims and a tap fires THE AIM ON SCREEN - a tap never re-aims
+   before firing, so the shot always goes where the preview points. The board
+   never scrolls the page under a finger, and extra fingers are ignored. */
+var touchTrack = null;
+function trackedTouch(ev) {
+  for (var i = 0; i < ev.changedTouches.length; i++)
+    if (touchTrack && ev.changedTouches[i].identifier === touchTrack.id) return ev.changedTouches[i];
+  return null;
+}
+cv.addEventListener("touchstart", function(ev) {
+  if (S.screen !== "play") return;
+  ev.preventDefault();
+  if (ev.touches.length > 1) return;
+  var t0 = ev.changedTouches[0];
+  touchTrack = {id: t0.identifier, x: t0.clientX, y: t0.clientY, aiming: false};
+}, {passive: false});
+cv.addEventListener("touchmove", function(ev) {
+  if (S.screen !== "play" || !touchTrack) return;
+  ev.preventDefault();
+  var t0 = trackedTouch(ev);
+  if (!t0) return;
+  if (!touchTrack.aiming && Math.abs(t0.clientX - touchTrack.x) < 12 && Math.abs(t0.clientY - touchTrack.y) < 12) return;
+  touchTrack.aiming = true;
+  aimFromPoint(t0.clientX, t0.clientY);
+}, {passive: false});
+cv.addEventListener("touchend", function(ev) {
+  if (!touchTrack) return;
+  var t0 = trackedTouch(ev);
+  if (!t0) return;
+  var wasAim = touchTrack.aiming;
+  touchTrack = null;
+  if (S.screen !== "play") return;
+  ev.preventDefault();
+  if (!wasAim) fire();
+}, {passive: false});
+cv.addEventListener("touchcancel", function() { touchTrack = null; });
 document.getElementById("menu").addEventListener("click", function(ev) {
   var b = ev.target.closest("button"); if (!b) return;
   var act = b.dataset.act;
