@@ -83,6 +83,7 @@ def BoardJson(board, state=None):
         "targetsLeft": board.TargetsLeft(),
         "dockPaid": board.DockPaid,
         "shots": len(board.Log),
+        "extra": board.Extra,
         "limit": board.Limit,
         "streak": board.Streak,
         "meter": board.Meter,
@@ -538,6 +539,8 @@ PAGE = r"""<!DOCTYPE html>
   #hud .who { color: var(--dim); }
   #hud .who b { color: var(--text); font-weight: normal; }
   #hud .score { font-size: 20px; color: var(--gold); font-family: Consolas, monospace; }
+  @keyframes lowpulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  .lowshots { animation: lowpulse 1.1s infinite; }
   #stage { position: relative; }
   canvas#board { display: block; box-sizing: content-box; background: #10141a; border: 1px solid var(--edge); border-radius: 6px; }
   #msg { min-height: 18px; padding: 5px 2px 2px; color: var(--text); }
@@ -687,6 +690,7 @@ function ambientKick() {
 function ringActive() { return !!(S.board && !S.board.over && S.board.targetsLeft === 1); }
 function lastTargetCells() { var out = []; for (var k in gridMap) { if (gridMap[k][2] === "#") out.push(gridMap[k]); } return out; }
 function dockPipsLeft() { return S.board ? Math.max(0, 2 - (S.board.dockPaid || 0)) : 0; }
+function popHeat(n) { return n <= 3 ? "255,210,74" : n <= 8 ? "255,175,0" : "255,95,208"; }
 function kindRGB(kind) { return kind === "x" ? "255,95,95" : kind === "r" ? "255,175,0" : kind === "s" ? "135,255,135" : "57,194,215"; }
 function shotTint() { return kindRGB((S.playing && S.shotKind) || "n"); }
 
@@ -865,7 +869,7 @@ function draw() {
     if (f.g !== S.gen) { popFx.splice(p, 1); continue; }
     f.r += 0.9; f.a -= 0.06;
     if (f.a <= 0) { popFx.splice(p, 1); continue; }
-    ctx.strokeStyle = "rgba(255,210,74," + f.a + ")"; ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(" + (f.c || "255,210,74") + "," + f.a + ")"; ctx.lineWidth = 2;
     circ(OX + f.x*CS + CS/2, OY + f.y*CS + CS/2, f.r); ctx.stroke();
   }
   // falling cells slide one row
@@ -932,6 +936,7 @@ function renderHud() {
   document.getElementById("who").innerHTML = "CHAIN &nbsp;" + who + (b.style ? ' <span style="color:var(--dim)">(' + b.style + ")</span>" : "");
   var pips = "";
   for (var i = 0; i < b.limit; i++) pips += '<span style="color:' + (i < b.shots ? "var(--gold)" : "#3a4450") + '">&#9679;</span>';
+  if (!b.over && b.limit + (b.extra || 0) - b.shots <= 2) pips = '<span class="lowshots">' + pips + "</span>";
   document.getElementById("stats").innerHTML =
     "targets <b>" + b.targetsLeft + "</b> / quota " + b.quota + " &nbsp; " + pips +
     (b.streak > 1 ? ' &nbsp; streak <b style="color:var(--good)">x' + Math.min(b.streak, 4) + "</b>" : "") +
@@ -1078,9 +1083,9 @@ function applyShotEvent(ev, gen, blast) {
     sndPop(SND.pops++);
     if (c[2] === "F") textFx.push({x: c[0], y: c[1], text: "+1 shot", rgb: "135,255,135", a: 1, g: gen});
     else if (S.board && S.board.jackpot && c[0] === S.board.jackpot[0] && c[1] === S.board.jackpot[1]) textFx.push({x: c[0], y: c[1], text: "+500", rgb: "255,95,208", a: 1, g: gen});
-    if (ev.e === "pop") { popFx.push({x:c[0], y:c[1], r:6, a:0.9, g:gen}); delete gridMap[key];
+    if (ev.e === "pop") { popFx.push({x:c[0], y:c[1], r:6, a:0.9, c: popHeat(SND.pops), g:gen}); delete gridMap[key];
       S.shake = Math.max(S.shake || 0, (blast || c[2] === "B") ? 6 : 3); }
-    else { popFx.push({x:c[0], y:c[1], r:3, a:0.5, g:gen}); delete gridMap[key]; }
+    else { popFx.push({x:c[0], y:c[1], r:3, a:0.5, c: popHeat(SND.pops), g:gen}); delete gridMap[key]; }
   });
   startFxPump();
 }
@@ -1608,6 +1613,11 @@ function selftest() {
     ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
     t("one-short board resumes for the ring", !!ok);
     t("last-target ring marks the final target", ringActive() === true && lastTargetCells().length >= 1 && lastTargetCells().every(function(g) { return g[2] === "#"; }));
+    var ringCols = [], origStroke = ctx.stroke;
+    ctx.stroke = function() { var cs = "" + ctx.strokeStyle; if (/^rgba\(255, ?210, ?74,/.test(cs) && ringCols.indexOf(cs) < 0) ringCols.push(cs); return origStroke.apply(this, arguments); };
+    await new Promise(function(r) { setTimeout(r, 900); });
+    ctx.stroke = origStroke;
+    t("last-target ring pulses", ringCols.length >= 2);
     key("3");
     t("blast ball selected for tint", S.ball === "x");
     S.fast = false; S.aim = 12;
@@ -1651,6 +1661,42 @@ function selftest() {
     ok = await until(function() { return textFx.some(function(f) { return f.text === "+500"; }); }, 8000);
     t("jackpot floats +500 at the star", !!ok);
     ok = await until(function() { return !S.playing; }, 20000);
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes for pop heat", !!ok);
+    var heatOrder = [], heatPoll = setInterval(function() {
+      popFx.forEach(function(f) { var c = f.c || "255,210,74"; if (heatOrder.indexOf(c) < 0) heatOrder.push(c); });
+    }, 30);
+    S.fast = true; S.aim = 7;
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    clearInterval(heatPoll);
+    t("pop rings heat up gold to amber to pink", !!ok && heatOrder.join("|") === "255,210,74|255,175,0|255,95,208");
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes for the low-shots pulse", !!ok);
+    S.fast = true; S.aim = 8;
+    for (var miss = 0; miss < 6; miss++) { key(" "); ok = await until(function() { return !S.playing; }, 20000); if (!ok) break; }
+    t("shots pips steady with three real left", !!ok && S.board.shots === 6 && S.board.extra === 1 && document.getElementById("stats").innerHTML.indexOf("lowshots") < 0);
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("shots pips pulse with two real left", !!ok && S.board.shots === 7 && document.getElementById("stats").innerHTML.indexOf("lowshots") >= 0);
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes with earned extra shots", !!ok);
+    S.fast = true;
+    var seq = [1, 4, 8, 8, 8, 8, 8];
+    for (var si = 0; si < seq.length; si++) { S.aim = seq[si]; key(" "); ok = await until(function() { return !S.playing; }, 20000); if (!ok) break; }
+    t("earned extras hold the pulse off at four real left", !!ok && S.board.shots === 7 && S.board.extra === 3 && document.getElementById("stats").innerHTML.indexOf("lowshots") < 0);
+    S.aim = 8; key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("earned extras hold the pulse off at three real left", !!ok && S.board.shots === 8 && document.getElementById("stats").innerHTML.indexOf("lowshots") < 0);
+    S.aim = 8; key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("pulse fires when real remaining hits two", !!ok && S.board.shots === 9 && document.getElementById("stats").innerHTML.indexOf("lowshots") >= 0);
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
     var pre = document.createElement("pre"); pre.id = "selftest"; pre.textContent = out.join("\n");
