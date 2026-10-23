@@ -648,7 +648,7 @@ PAGE = r"""<!DOCTYPE html>
     <div id="msg"></div>
     <div id="bar">
       <span id="balls"></span>
-      <span id="keys"><span class="kb"><b>&larr;</b><b>&rarr;</b> aim &nbsp;<b>Space</b> fire &nbsp;<b>P</b> preview &nbsp;<b>F</b> fast &nbsp;<b>R</b> restart &nbsp;<b>Q</b> menu</span><span class="tc"><b>drag</b> aim &nbsp;<b>tap</b> fire</span></span>
+      <span id="keys"><span class="kb"><b>&larr;</b><b>&rarr;</b> aim &nbsp;<b>Space</b> fire &nbsp;<b>P</b> preview &nbsp;<b>F</b> fast &nbsp;<b>R</b> restart &nbsp;<b>S</b> sound &nbsp;<b>Q</b> menu</span><span class="tc"><b>drag</b> aim &nbsp;<b>tap</b> fire</span></span>
     </div>
   </div>
 
@@ -899,14 +899,16 @@ function renderHud() {
       (S.watchAuto ? ' <span style="color:var(--dim)">auto</span>' : "") +
       '<span class="wc"><span class="ball" data-watch="next"><span class="k">next</span></span>' +
       '<span class="ball" data-watch="auto"><span class="k">auto</span></span>' +
-      '<span class="ball" data-watch="menu"><span class="k">menu</span></span></span>';
-    document.getElementById("keys").innerHTML = '<span class="kb"><b>Space</b> next &nbsp;<b>A</b> auto &nbsp;<b>F</b> fast &nbsp;<b>Q</b> menu</span><span class="tc"><b>watching</b> replay</span>';
+      '<span class="ball" data-watch="menu"><span class="k">menu</span></span>' +
+      '<span class="ball" data-snd="1"><span class="k sl">' + sndLabel() + "</span></span></span>";
+    document.getElementById("keys").innerHTML = '<span class="kb"><b>Space</b> next &nbsp;<b>A</b> auto &nbsp;<b>F</b> fast &nbsp;<b>S</b> sound &nbsp;<b>Q</b> menu</span><span class="tc"><b>watching</b> replay</span>';
     var wchips = document.querySelectorAll("#balls .ball[data-watch]");
     for (var w = 0; w < wchips.length; w++) wchips[w].onclick = function() { watchTap(this.dataset.watch); };
+    wireSnd(document.getElementById("balls"));
     document.getElementById("msg").innerHTML = S.msg || "";
     return;
   }
-  document.getElementById("keys").innerHTML = '<span class="kb"><b>&larr;</b><b>&rarr;</b> aim &nbsp;<b>Space</b> fire &nbsp;<b>P</b> preview &nbsp;<b>F</b> fast &nbsp;<b>R</b> restart &nbsp;<b>Q</b> menu</span><span class="tc"><b>drag</b> aim &nbsp;<b>tap</b> fire</span>';
+  document.getElementById("keys").innerHTML = '<span class="kb"><b>&larr;</b><b>&rarr;</b> aim &nbsp;<b>Space</b> fire &nbsp;<b>P</b> preview &nbsp;<b>F</b> fast &nbsp;<b>R</b> restart &nbsp;<b>S</b> sound' + (SND.on ? '' : ' off') + ' &nbsp;<b>Q</b> menu</span><span class="tc"><b>drag</b> aim &nbsp;<b>tap</b> fire</span>';
   var names = {n:"normal", r:"rebound", x:"blast", s:"second chance"};
   var html = "";
   ["n","r","x","s"].forEach(function(k, i) {
@@ -914,9 +916,11 @@ function renderHud() {
     html += '<span class="ball' + (S.ball === k ? " sel" : "") + (k !== "n" && !b.stock[k] ? " empty" : "") +
             '" data-ball="' + k + '"><span class="k">' + (i+1) + "</span>" + names[k] + " " + n + "</span>";
   });
+  html += '<span class="ball" data-snd="1"><span class="k sl">' + sndLabel() + "</span></span>";
   document.getElementById("balls").innerHTML = html;
-  var chips = document.querySelectorAll("#balls .ball");
+  var chips = document.querySelectorAll("#balls .ball[data-ball]");
   for (var j = 0; j < chips.length; j++) chips[j].onclick = function() { pickBall(this.dataset.ball); };
+  wireSnd(document.getElementById("balls"));
   document.getElementById("msg").innerHTML = S.msg || "";
 }
 function pickBall(k) {
@@ -932,15 +936,63 @@ function refreshPreview() {
 }
 
 /* ---------- shot playback ---------- */
+/* sound: tiny synthesized WebAudio juice, no assets. Pops climb in pitch
+   within a shot like the classic chain ramp; S toggles sound on any screen
+   and the choice sticks in localStorage. Beeps are decision-logged so the
+   client selftest can assert them without audible output. */
+var SND = { ctx: null, gain: null, on: true, pops: 0, popFreqs: [], log: [], seq: 0 };
+try { SND.on = localStorage.getItem("chainSound") !== "off"; } catch (e) {}
+function ac() {
+  if (!SND.ctx) {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) { try { SND.ctx = new AC(); } catch (e) {} }
+  }
+  if (SND.ctx && !SND.gain) { SND.gain = SND.ctx.createGain(); SND.gain.gain.value = SND.on ? 1 : 0; SND.gain.connect(SND.ctx.destination); }
+  if (SND.ctx && SND.ctx.state === "suspended") SND.ctx.resume();
+  return SND.ctx;
+}
+function beep(f0, f1, dur, type, vol) {
+  if (!SND.on) return;
+  var c = ac(); if (!c) return;
+  SND.log.push(Math.round(f0)); if (SND.log.length > 400) SND.log.shift();
+  var o = c.createOscillator(), g = c.createGain(), t = c.currentTime;
+  o.type = type || "sine";
+  o.frequency.setValueAtTime(f0, t);
+  if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(SND.gain || c.destination);
+  o.start(t); o.stop(t + dur);
+}
+function sndFire() { beep(160, 70, 0.09, "triangle", 0.18); }
+function sndPop(n) {
+  var st = Math.min(n, 24), f = Math.round(330 * Math.pow(2, st / 12));
+  SND.popFreqs.push(f); beep(f, 0, 0.07, "sine", 0.10);
+}
+/* delayed notes play only if sound is still on AND the screen has not changed
+   since they were scheduled: muting or leaving cuts a sting short cleanly */
+function later(ms, fn) { var q = SND.seq; setTimeout(function() { if (SND.on && q === SND.seq) fn(); }, ms); }
+function sndCatch() { beep(523, 0, 0.09, "sine", 0.12); later(90, function() { beep(784, 0, 0.12, "sine", 0.12); }); }
+function sndWin() { [523, 659, 784, 1047].forEach(function(f, i) { later(i * 95, function() { beep(f, 0, 0.14, "triangle", 0.12); }); }); }
+function sndLose() { [392, 330, 262].forEach(function(f, i) { later(i * 120, function() { beep(f, 0, 0.16, "sine", 0.10); }); }); }
+function sndLabel() { return "sound " + (SND.on ? "on" : "off"); }
+function sndToggle() {
+  SND.on = !SND.on;
+  try { localStorage.setItem("chainSound", SND.on ? "on" : "off"); } catch (e) {}
+  if (SND.gain) SND.gain.gain.value = SND.on ? 1 : 0;
+  document.querySelectorAll("[data-snd] .sl").forEach(function(n) { n.textContent = sndLabel(); });
+  if (S.board) renderHud();
+}
+function wireSnd(root) { root.querySelectorAll("[data-snd]").forEach(function(n) { n.onclick = function() { sndToggle(); }; }); }
 function fire() {
   if (S.playing || !S.board || S.board.over || S.screen !== "play") return;
-  S.playing = true; pathDots = []; recoilT = 6;
+  S.playing = true; pathDots = []; recoilT = 6; sndFire();
   api("/api/shot", {aim: S.aim, ball: S.ball}).then(function(resp) {
     S.ball = "n"; S.lastShot = resp.shot;
     playShot(resp, function() {
       S.board = resp.board; syncGrid(resp.board.grid); S.dock = resp.board.dock;
       S.msg = resp.message; ballPos = null; trail = [];
-      if (resp.shot && resp.shot.caught) { catchFx.push({x: resp.shot.floorX, r: 6, a: 0.95, g: resp.gen}); startFxPump(); }
+      if (resp.shot && resp.shot.caught) { catchFx.push({x: resp.shot.floorX, r: 6, a: 0.95, g: resp.gen}); startFxPump(); sndCatch(); }
       var sh = resp.shot || {}, big = null, sub = "+" + sh.points;
       if (sh.jackpot) big = "JACKPOT";
       else if (sh.overdrive) big = "OVERDRIVE";
@@ -969,6 +1021,7 @@ function applyShotEvent(ev, gen, blast) {
   }
   ev.cells.forEach(function(c) {
     var key = c[0]+","+c[1];
+    sndPop(SND.pops++);
     if (ev.e === "pop") { popFx.push({x:c[0], y:c[1], r:6, a:0.9, g:gen}); delete gridMap[key];
       S.shake = Math.max(S.shake || 0, (blast || c[2] === "B") ? 6 : 3); }
     else { popFx.push({x:c[0], y:c[1], r:3, a:0.5, g:gen}); delete gridMap[key]; }
@@ -990,6 +1043,7 @@ function playShot(resp, done) {
   var tl = resp.timeline && resp.timeline.length ? resp.timeline
        : resp.frames.map(function(f) { return {b: f}; }).concat(resp.events);
   var i = 0;
+  SND.pops = 0; SND.popFreqs = [];
   var perTick = S.fast ? 6 : 2;
   function step() {
     var moved = 0, slow = false;
@@ -1013,8 +1067,9 @@ function playShot(resp, done) {
 
 /* ---------- screens ---------- */
 function applyState(st) {
-  var prevGen = S.gen;
+  var prevGen = S.gen, prevScreen = S.screen;
   S.screen = st.screen; S.msg = st.message || "";
+  if (prevScreen && prevScreen !== st.screen) SND.seq++;
   if (typeof st.gen === "number") S.gen = st.gen;
   if (S.gen !== prevGen) {
     popFx = popFx.filter(function(f) { return f.g === S.gen; });
@@ -1038,6 +1093,10 @@ function applyState(st) {
   }
   if (st.board) { S.board = st.board; if (!S.playing) { syncGrid(st.board.grid); S.dock = st.board.dock; } }
   show("draft", st.screen === "draft"); show("result", st.screen === "gameover" || st.screen === "complete");
+  if (prevScreen && prevScreen !== st.screen) {
+    if (st.screen === "draft" || st.screen === "complete") sndWin();
+    else if (st.screen === "gameover") sndLose();
+  }
   if (st.screen === "draft") renderDraft(st);
   if (st.screen === "gameover" || st.screen === "complete") renderResult(st);
   draw(); renderHud(); refreshPreview();
@@ -1050,11 +1109,12 @@ function renderDraft(st) {
     html += '<div class="card" data-pick="' + (i+1) + '"><div class="k">[' + (i+1) + "]</div><div class='name'>" + names[c] +
             "</div><div class='what'>" + notes[c] + "</div><div class='have'>have " + (st.satchel[c] || 0) + " &rarr; " + ((st.satchel[c] || 0)+1) + "</div></div>";
   });
-  html += '</div><div class="row"><button data-pick="0"><span class="k">[0]</span>Skip</button><button data-go="menu"><span class="k">[Q]</span>menu</button></div>' +
+  html += '</div><div class="row"><button data-pick="0"><span class="k">[0]</span>Skip</button><button data-go="menu"><span class="k">[Q]</span>menu</button><button data-snd="1"><span class="k">[S]</span> <span class="sl">' + sndLabel() + "</span></button></div>" +
           '<p class="code">run code so far: ' + st.code + "</p></div>";
   var el = document.getElementById("draft"); el.innerHTML = html;
   el.querySelectorAll("[data-pick]").forEach(function(n) { n.onclick = function() { pick(n.dataset.pick); }; });
   el.querySelectorAll("[data-go]").forEach(function(n) { n.onclick = function() { go(n.dataset.go); }; });
+  wireSnd(el);
 }
 function renderResult(st) {
   var r = st.result, html = "";
@@ -1062,19 +1122,20 @@ function renderResult(st) {
     html = '<div class="sheet"><h2 class="gold">RUN COMPLETE</h2><p>all 3 boards cleared</p><p class="big">' + r.total + "</p>" +
            (r.isNew ? '<p style="color:var(--good)">new best score</p>' : "<p style='color:var(--dim)'>best " + r.best + "</p>") +
            '<p class="code">run code: ' + r.code + '</p><div class="row"><button data-go="advance"><span class="k">Enter</span>run ' + r.next +
-           '</button><button data-go="menu"><span class="k">Q</span>menu</button></div></div>';
+           '</button><button data-go="menu"><span class="k">Q</span>menu</button><button data-snd="1"><span class="k">[S]</span> <span class="sl">' + sndLabel() + "</span></button></div></div>";
   } else if (r.kind === "marathonover") {
     html = '<div class="sheet"><h2>MARATHON OVER</h2><p>' + r.cleared + (r.cleared === 1 ? " board" : " boards") + ' cleared</p><p class="big">' + r.total + "</p>" +
            (r.isNew ? '<p style="color:var(--good)">new marathon best</p>' : "<p style='color:var(--dim)'>best " + r.bestBoards + " boards, " + r.bestScore + "</p>") +
            '<p class="code">marathon code: ' + r.code + '</p><div class="row"><button data-go="advance"><span class="k">Enter</span>marathon ' + r.next +
-           '</button><button data-go="menu"><span class="k">Q</span>menu</button></div></div>';
+           '</button><button data-go="menu"><span class="k">Q</span>menu</button><button data-snd="1"><span class="k">[S]</span> <span class="sl">' + sndLabel() + "</span></button></div></div>";
   } else {
     html = '<div class="sheet"><h2>RUN OVER</h2><p>board ' + r.k + " fell</p><p class='big'>" + r.score + "</p>" +
            '<p class="code">run code: ' + r.code + '</p><div class="row"><button data-go="advance"><span class="k">Enter</span>run ' + r.next +
-           '</button><button data-go="restart"><span class="k">R</span>retry run</button><button data-go="menu"><span class="k">Q</span>menu</button></div></div>';
+           '</button><button data-go="restart"><span class="k">R</span>retry run</button><button data-go="menu"><span class="k">Q</span>menu</button><button data-snd="1"><span class="k">[S]</span> <span class="sl">' + sndLabel() + "</span></button></div></div>";
   }
   var el = document.getElementById("result"); el.innerHTML = html;
   el.querySelectorAll("[data-go]").forEach(function(n) { n.onclick = function() { go(n.dataset.go); }; });
+  wireSnd(el);
 }
 function startWatch(st) {
   S.preview = false; S.watchAuto = false; S.aim = 19; S.ball = "n"; ballPos = null; trail = [];
@@ -1141,7 +1202,7 @@ function helpHtml() {
     '<span style="color:#5fd787">&#9673;</span> bumper (3 hits) &nbsp;<span style="color:#ff5f5f">&#10041;</span> bomb &nbsp;' +
     '<span style="color:#ffaf00">&#9644;</span> dock &nbsp;<span style="color:#87ff87">&#9829;</span> free shot &nbsp;' +
     '<span style="color:#c8ccd2">&#9585;&#9586;</span> mirror</p>' +
-    "<h3>Controls</h3><p><b>&larr; &rarr;</b>, mouse or drag to aim &nbsp; <b>Space</b>, click or tap to fire &nbsp; <b>1-4</b> ball &nbsp; <b>P</b> preview &nbsp; <b>F</b> fast &nbsp; <b>R</b> restart &nbsp; <b>Q</b> menu</p>" +
+    "<h3>Controls</h3><p><b>&larr; &rarr;</b>, mouse or drag to aim &nbsp; <b>Space</b>, click or tap to fire &nbsp; <b>1-4</b> ball &nbsp; <b>P</b> preview &nbsp; <b>F</b> fast &nbsp; <b>R</b> restart &nbsp; <b>S</b> sound &nbsp; <b>Q</b> menu</p>" +
     '<div class="row"><button onclick="hideHelp()"><span class="k">Esc</span>back</button></div></div>';
 }
 function showHelp() { var el = document.getElementById("helpOv"); el.innerHTML = helpHtml(); show("helpOv", true); }
@@ -1156,6 +1217,7 @@ document.addEventListener("keydown", function(ev) {
     if (k === "Escape" || k === "q" || k === "Enter") hideHelp();
     return;
   }
+  if (k === "s" || k === "S") { sndToggle(); return; }
   if (S.screen === "title") {
     if (k === "Enter") start("run");
     else if (k === "m" || k === "M") start("marathon");
@@ -1288,6 +1350,8 @@ function selftest() {
     });
   }
   (async function() {
+    try { localStorage.removeItem("chainSound"); } catch (e) {}
+    SND.on = true;
     t("title screen on load", S.screen === "title");
     key("Enter");
     var ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
@@ -1321,6 +1385,31 @@ function selftest() {
       ok = await until(function() { return S.screen === "play" && S.board && S.board.shots === shots0 + 1; }, 5000);
       t("resume code round-trips to the same board", !!ok);
     }
+    var sl0 = SND.log.length;
+    key("s"); t("S mutes sound", SND.on === false);
+    try { t("mute choice persists", localStorage.getItem("chainSound") === "off"); } catch (e) { t("mute choice persists", false); }
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("muted shot completes with zero beeps", ok && SND.log.length === sl0);
+    key("s"); t("S turns sound back on", SND.on === true);
+    try { t("unmute choice persists", localStorage.getItem("chainSound") !== "off"); } catch (e) { t("unmute choice persists", false); }
+    t("sound chip present on the play screen", !!document.querySelector("#balls [data-snd]"));
+    document.querySelector("#balls [data-snd]").click();
+    t("sound chip mutes without the keyboard", SND.on === false && document.querySelector("#balls [data-snd] .sl").textContent === "sound off");
+    document.querySelector("#balls [data-snd]").click();
+    t("sound chip restores sound", SND.on === true && document.querySelector("#balls [data-snd] .sl").textContent === "sound on");
+    key("s");
+    t("mute silences the master gain", !!SND.gain && SND.gain.gain.value === 0);
+    key("s");
+    t("unmute restores the master gain", !!SND.gain && SND.gain.gain.value === 1);
+    var sl2 = SND.log.length;
+    sndWin(); SND.on = false;
+    await new Promise(function(r) { setTimeout(r, 450); });
+    t("a muted sting schedules no late notes", SND.log.length === sl2);
+    SND.on = true;
+    sndWin(); SND.seq++;
+    await new Promise(function(r) { setTimeout(r, 450); });
+    t("sting notes stop after leaving the screen", SND.log.length === sl2);
     catchFx.push({x: 10, r: 6, a: 0.9, g: S.gen});
     slideFx.push({x: 10, y0: 4, y1: 5, sym: "o", t: 0, g: S.gen});
     draw();
@@ -1335,6 +1424,18 @@ function selftest() {
     ok = await until(function() { return S.gen !== g0; }, 5000);
     t("restart bumps the generation", !!ok);
     t("restart clears the running catch pulse (QA residual-fx repro)", ok && catchFx.length === 0);
+    key("q");
+    ok = await until(function() { return S.screen === "title"; }, 5000);
+    t("Q quits the restarted run", !!ok);
+    document.getElementById("resumeCode").value = "CH24R-40001-9.10.10-00-4r.10/3r.33x/30x.11r";
+    document.getElementById("watchBtn").click();
+    ok = await until(function() { return S.screen === "watch"; }, 5000);
+    t("fixed reference run opens in watch", !!ok);
+    var sl1 = SND.log.length;
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("watch replay produces pop beeps", ok && SND.log.length - sl1 >= 2);
+    t("pop pitch climbs within a shot", SND.popFreqs.length > 1 && SND.popFreqs.every(function(f, i) { return i === 0 || f >= SND.popFreqs[i - 1]; }));
     slideFx.length = 0;
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
