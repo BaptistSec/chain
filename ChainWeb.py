@@ -670,7 +670,23 @@ var DIRS = __DIRS__;
 var S = {screen:"title", board:null, aim:19, ball:"n", preview:true, fast:false,
          playing:false, msg:"", dock:25, records:null, daily:"", gen:0};
 var cv = document.getElementById("board"), ctx = cv.getContext("2d");
-var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx = [], catchFx = [], fxPump = false, flourishFx = [], recoilT = 0, shotCredits = 0;
+var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx = [], catchFx = [], fxPump = false, flourishFx = [], recoilT = 0, shotCredits = 0, ambientT = 0, ambientOn = false;
+function jackpotUp() { var b = S.board; return !!(b && b.jackpot && gridMap[b.jackpot[0]+","+b.jackpot[1]]); }
+function ambientNeeded() { return S.screen === "play" && S.board && !S.board.over && (jackpotUp() || S.board.targetsLeft === 1); }
+function ambientKick() {
+  if (ambientOn) return;
+  ambientOn = true;
+  (function pump() {
+    if (!ambientNeeded()) { ambientOn = false; return; }
+    ambientT++;
+    draw();
+    setTimeout(pump, 90);
+  })();
+}
+function ringActive() { return !!(S.board && !S.board.over && S.board.targetsLeft === 1); }
+function lastTargetCells() { var out = []; for (var k in gridMap) { if (gridMap[k][2] === "#") out.push(gridMap[k]); } return out; }
+function kindRGB(kind) { return kind === "x" ? "255,95,95" : kind === "r" ? "255,175,0" : kind === "s" ? "135,255,135" : "57,194,215"; }
+function shotTint() { return kindRGB((S.playing && S.shotKind) || "n"); }
 
 function api(path, body) {
   return fetch(path + (path.indexOf("?") < 0 ? "?" : "&") + "k=" + TOKEN,
@@ -711,7 +727,9 @@ function drawCell(x, y, sym, bumps, jackpot) {
     ctx.strokeStyle = jackpot ? "#a03090" : "#9a7d10";
     rr(px+1, py+1, c-2, c-2, 3); ctx.fill(); ctx.stroke();
     ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.fillRect(px+3, py+3, c-6, 3);
-    if (jackpot) { ctx.fillStyle = "#fff"; star(px+c/2, py+c/2, 5, 6, 2.5); ctx.fill(); }
+    if (jackpot) { var pl = 1 + 0.18*Math.sin(ambientT*0.7);
+      ctx.fillStyle = "rgba(255,95,208," + (0.10 + 0.08*Math.sin(ambientT*0.7)) + ")"; circ(px+c/2, py+c/2, c/2+2); ctx.fill();
+      ctx.fillStyle = "#fff"; star(px+c/2, py+c/2, 5, 6*pl, 2.5*pl); ctx.fill(); }
   } else if (sym === "o" || sym === "+") {
     ctx.fillStyle = sym === "o" ? "#37c8e8" : "#c86ff0";
     ctx.strokeStyle = "rgba(0,0,0,.4)";
@@ -789,6 +807,7 @@ function drawStyleEmblem(style) {
   ctx.restore();
 }
 function draw() {
+  ambientKick();
   ctx.clearRect(0, 0, cv.width, cv.height);
   if (S.shake > 0.3) {
     ctx.save();
@@ -800,6 +819,11 @@ function draw() {
   var sliding = {};
   for (var sf = 0; sf < slideFx.length; sf++) sliding[slideFx[sf].x+","+slideFx[sf].y1] = true;
   for (var key in gridMap) { if (sliding[key]) continue; var g = gridMap[key]; drawCell(g[0], g[1], g[2], (b && b.bumps[key]) || 0, b && b.jackpot && b.jackpot[0] === g[0] && b.jackpot[1] === g[1]); }
+  if (ringActive()) {
+    var ra = 0.35 + 0.3*Math.sin(ambientT*0.7);
+    ctx.strokeStyle = "rgba(255,210,74," + ra + ")"; ctx.lineWidth = 2;
+    lastTargetCells().forEach(function(g) { circ(OX + g[0]*CS + CS/2, OY + g[1]*CS + CS/2, CS/2 + 2); ctx.stroke(); });
+  }
   // floor + dock
   var fy = OY + H*CS;
   ctx.fillStyle = "#2a323d"; ctx.fillRect(OX, fy, W*CS, 6);
@@ -822,14 +846,15 @@ function draw() {
     }
   }
   // ball + trail
+  var tint = shotTint();
   for (var t = 0; t < trail.length; t++) {
-    ctx.fillStyle = "rgba(215,222,230," + (0.05 + 0.05*t) + ")";
+    ctx.fillStyle = "rgba(" + tint + "," + (0.05 + 0.05*t) + ")";
     circ(OX + trail[t][0]*CS + CS/2, OY + trail[t][1]*CS + CS/2, 4); ctx.fill();
   }
   if (ballPos) {
-    ctx.fillStyle = "rgba(57,194,215,.22)"; circ(OX + ballPos[0]*CS + CS/2, OY + ballPos[1]*CS + CS/2, 10); ctx.fill();
+    ctx.fillStyle = "rgba(" + tint + ",.22)"; circ(OX + ballPos[0]*CS + CS/2, OY + ballPos[1]*CS + CS/2, 10); ctx.fill();
     ctx.fillStyle = "#fff"; circ(OX + ballPos[0]*CS + CS/2, OY + ballPos[1]*CS + CS/2, 6.5); ctx.fill();
-    ctx.strokeStyle = "rgba(57,194,215,.8)"; ctx.lineWidth = 1.5; circ(OX + ballPos[0]*CS + CS/2, OY + ballPos[1]*CS + CS/2, 8.5); ctx.stroke();
+    ctx.strokeStyle = "rgba(" + tint + ",.8)"; ctx.lineWidth = 1.5; circ(OX + ballPos[0]*CS + CS/2, OY + ballPos[1]*CS + CS/2, 8.5); ctx.stroke();
   }
   // pop flashes
   for (var p = popFx.length-1; p >= 0; p--) {
@@ -1051,6 +1076,7 @@ function startFxPump() {
 function playShot(resp, done) {
   // Chronological engine record: ball steps, peg removals and settle events
   // replay in the exact order the simulation produced them.
+  S.shotKind = (resp.shot && resp.shot.kind) || "n";
   var tl = resp.timeline && resp.timeline.length ? resp.timeline
        : resp.frames.map(function(f) { return {b: f}; }).concat(resp.events);
   var i = 0;
@@ -1079,6 +1105,7 @@ function playShot(resp, done) {
       setTimeout(step, (slow ? (S.fast ? 60 : 160) : (S.fast ? 8 : 16)) * (calm ? 3 : 1));
       return;
     }
+    S.shotKind = "n";
     done();
   }
   step();
@@ -1536,6 +1563,39 @@ function selftest() {
     window.setTimeout = origST;
     t("one-short shot resolves", !!ok);
     t("tension slows the ball step cadence", S.sawTension && delays.indexOf(48) >= 0);
+    // board legibility: ambient jackpot pulse, last-target ring, kind tint
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeCode").value = "CH24R-40001-9.10.10--";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes for legibility", !!ok);
+    t("last-target ring stays off with many targets", ringActive() === false);
+    t("jackpot is up on the fresh seeded board", jackpotUp() === true);
+    var at0 = ambientT;
+    await new Promise(function(r) { setTimeout(r, 400); });
+    t("jackpot pulse animates while uncollected", ambientT > at0);
+    S.fast = true; S.aim = 11;
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    await new Promise(function(r) { setTimeout(r, 400); });
+    var at1 = ambientT;
+    await new Promise(function(r) { setTimeout(r, 320); });
+    t("jackpot pulse stops once collected", !!ok && !jackpotUp() && ambientT === at1);
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeCode").value = "CH24R-40001-9.10.10--4.3.15";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("one-short board resumes for the ring", !!ok);
+    t("last-target ring marks the final target", ringActive() === true && lastTargetCells().length >= 1 && lastTargetCells().every(function(g) { return g[2] === "#"; }));
+    key("3");
+    t("blast ball selected for tint", S.ball === "x");
+    S.fast = false; S.aim = 12;
+    key(" ");
+    ok = await until(function() { return S.playing && trail.length > 2; }, 5000);
+    t("blast shot runs with a red tint", !!ok && shotTint() === "255,95,95");
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("tint returns to normal after the shot", !!ok && shotTint() === "57,194,215");
+    t("kind tint map", kindRGB("n") === "57,194,215" && kindRGB("r") === "255,175,0" && kindRGB("s") === "135,255,135" && kindRGB("x") === "255,95,95");
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
     var pre = document.createElement("pre"); pre.id = "selftest"; pre.textContent = out.join("\n");
