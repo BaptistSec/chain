@@ -670,7 +670,7 @@ var DIRS = __DIRS__;
 var S = {screen:"title", board:null, aim:19, ball:"n", preview:true, fast:false,
          playing:false, msg:"", dock:25, records:null, daily:"", gen:0};
 var cv = document.getElementById("board"), ctx = cv.getContext("2d");
-var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx = [], catchFx = [], fxPump = false, flourishFx = [], recoilT = 0;
+var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx = [], catchFx = [], fxPump = false, flourishFx = [], recoilT = 0, shotCredits = 0;
 
 function api(path, body) {
   return fetch(path + (path.indexOf("?") < 0 ? "?" : "&") + "k=" + TOKEN,
@@ -823,12 +823,13 @@ function draw() {
   }
   // ball + trail
   for (var t = 0; t < trail.length; t++) {
-    ctx.fillStyle = "rgba(215,222,230," + (0.10 + 0.08*t) + ")";
+    ctx.fillStyle = "rgba(215,222,230," + (0.05 + 0.05*t) + ")";
     circ(OX + trail[t][0]*CS + CS/2, OY + trail[t][1]*CS + CS/2, 4); ctx.fill();
   }
   if (ballPos) {
-    ctx.fillStyle = "#fff"; circ(OX + ballPos[0]*CS + CS/2, OY + ballPos[1]*CS + CS/2, 5.5); ctx.fill();
-    ctx.strokeStyle = "rgba(57,194,215,.8)"; ctx.lineWidth = 1.5; circ(OX + ballPos[0]*CS + CS/2, OY + ballPos[1]*CS + CS/2, 7.5); ctx.stroke();
+    ctx.fillStyle = "rgba(57,194,215,.22)"; circ(OX + ballPos[0]*CS + CS/2, OY + ballPos[1]*CS + CS/2, 10); ctx.fill();
+    ctx.fillStyle = "#fff"; circ(OX + ballPos[0]*CS + CS/2, OY + ballPos[1]*CS + CS/2, 6.5); ctx.fill();
+    ctx.strokeStyle = "rgba(57,194,215,.8)"; ctx.lineWidth = 1.5; circ(OX + ballPos[0]*CS + CS/2, OY + ballPos[1]*CS + CS/2, 8.5); ctx.stroke();
   }
   // pop flashes
   for (var p = popFx.length-1; p >= 0; p--) {
@@ -925,7 +926,8 @@ function renderHud() {
 }
 function pickBall(k) {
   if (S.playing || !S.board || S.board.over) return;
-  if (k !== "n" && !(S.board.stock[k] > 0)) { S.msg = "No " + k + " balls left"; renderHud(); return; }
+  if (k !== "n" && !(S.board.stock[k] > 0)) { S.msg = "No " + k + " balls left"; sndDeny(); renderHud(); return; }
+  if (k !== S.ball) sndSelect();
   S.ball = k; refreshPreview(); renderHud();
 }
 
@@ -975,6 +977,12 @@ function later(ms, fn) { var q = SND.seq; setTimeout(function() { if (SND.on && 
 function sndCatch() { beep(523, 0, 0.09, "sine", 0.12); later(90, function() { beep(784, 0, 0.12, "sine", 0.12); }); }
 function sndWin() { [523, 659, 784, 1047].forEach(function(f, i) { later(i * 95, function() { beep(f, 0, 0.14, "triangle", 0.12); }); }); }
 function sndLose() { [392, 330, 262].forEach(function(f, i) { later(i * 120, function() { beep(f, 0, 0.16, "sine", 0.10); }); }); }
+function soon(ms, fn) { setTimeout(fn, ms); }
+function sndPick() { beep(660, 0, 0.06, "sine", 0.10); soon(60, function() { if (S.screen === "draft" || S.screen === "play") beep(880, 0, 0.09, "sine", 0.10); }); }
+function sndSelect() { beep(660, 0, 0.05, "sine", 0.07); }
+function sndDeny() { beep(140, 100, 0.09, "sawtooth", 0.05); }
+function sndJackpot() { [880, 1108, 1318].forEach(function(f, i) { later(150 + i * 80, function() { beep(f, 0, 0.12, "triangle", 0.10); }); }); }
+function sndOver() { [392, 523, 659].forEach(function(f, i) { later(i * 70, function() { beep(f, 0, 0.12, "triangle", 0.12); }); }); }
 function sndLabel() { return "sound " + (SND.on ? "on" : "off"); }
 function sndToggle() {
   SND.on = !SND.on;
@@ -1001,6 +1009,8 @@ function fire() {
       else if (sh.mult >= 3) big = "STREAK x" + sh.mult;
       if (sh.rally >= 3 && big !== "RALLY x" + sh.rally) sub += "  rally x" + sh.rally;
       if (big) { flourishFx.push({text: big, sub: sub, a: 1, g: resp.gen}); startFxPump(); }
+      if (big === "JACKPOT") sndJackpot();
+      else if (big === "OVERDRIVE") sndOver();
       api("/api/done", {gen: resp.gen, shotId: resp.shotId}).then(function(st) { S.playing = false; applyState(st); });
     });
   }).catch(function(e) { S.playing = false; S.msg = e.error || "shot refused"; renderHud(); });
@@ -1021,6 +1031,7 @@ function applyShotEvent(ev, gen, blast) {
   }
   ev.cells.forEach(function(c) {
     var key = c[0]+","+c[1];
+    if (c[2] === "#") shotCredits++;
     sndPop(SND.pops++);
     if (ev.e === "pop") { popFx.push({x:c[0], y:c[1], r:6, a:0.9, g:gen}); delete gridMap[key];
       S.shake = Math.max(S.shake || 0, (blast || c[2] === "B") ? 6 : 3); }
@@ -1044,13 +1055,16 @@ function playShot(resp, done) {
        : resp.frames.map(function(f) { return {b: f}; }).concat(resp.events);
   var i = 0;
   SND.pops = 0; SND.popFreqs = [];
+  shotCredits = 0; S.sawTension = false;
+  var pb = S.board || {};
+  var tension = !S.fast && !pb.over && pb.targetsLeft === 1;
   var perTick = S.fast ? 6 : 2;
   function step() {
     var moved = 0, slow = false;
     while (i < tl.length && moved < perTick && !slow) {
       var ev = tl[i++];
       if (ev.b) {
-        ballPos = ev.b; trail.push(ev.b); if (trail.length > 6) trail.shift();
+        ballPos = ev.b; trail.push(ev.b); if (trail.length > 10) trail.shift();
         if (typeof ev.d === "number") S.dock = ev.d;
         moved++;
       } else {
@@ -1059,7 +1073,12 @@ function playShot(resp, done) {
       }
     }
     draw();
-    if (i < tl.length) { setTimeout(step, slow ? (S.fast ? 60 : 160) : (S.fast ? 8 : 16)); return; }
+    if (i < tl.length) {
+      var calm = tension && shotCredits === 0 && !slow;
+      if (calm) S.sawTension = true;
+      setTimeout(step, (slow ? (S.fast ? 60 : 160) : (S.fast ? 8 : 16)) * (calm ? 3 : 1));
+      return;
+    }
     done();
   }
   step();
@@ -1184,7 +1203,7 @@ function go(what) {
   else if (what === "restart") api("/api/restart", {}).then(applyState);
   else api("/api/quit", {}).then(applyState);
 }
-function pick(choice) { api("/api/pick", {pick: choice}).then(applyState); }
+function pick(choice) { api("/api/pick", {pick: choice}).then(function(st) { sndPick(); applyState(st); }); }
 function start(mode) {
   document.getElementById("startErr").textContent = "";
   api("/api/start", {mode: mode}).then(function(st) { S.aim = 19; S.ball = "n"; applyState(st); })
@@ -1359,8 +1378,11 @@ function selftest() {
     var shots0 = S.board ? S.board.shots : -1;
     key("ArrowRight"); t("ArrowRight aims right", S.aim === 20);
     key("ArrowLeft"); t("ArrowLeft aims back", S.aim === 19);
+    var sSel = SND.log.length;
     key("3"); t("key 3 picks blast", S.ball === "x");
+    t("ball select ticks", SND.log.length === sSel + 1 && SND.log[SND.log.length - 1] === 660);
     key("4"); t("key 4 refused with empty second-chance stock", S.ball === "x");
+    t("refused pick buzzes", SND.log[SND.log.length - 1] === 140);
     key("1"); t("key 1 back to normal", S.ball === "n");
     S.fast = true;
     key(" ");
@@ -1437,6 +1459,83 @@ function selftest() {
     t("watch replay produces pop beeps", ok && SND.log.length - sl1 >= 2);
     t("pop pitch climbs within a shot", SND.popFreqs.length > 1 && SND.popFreqs.every(function(f, i) { return i === 0 || f >= SND.popFreqs[i - 1]; }));
     slideFx.length = 0;
+    // moment sounds: draft pick confirm (real draft via fixed quit-at-draft code)
+    key("q");
+    await new Promise(function(r) { setTimeout(r, 600); });
+    t("back at title for pick-sound test", S.screen === "title");
+    document.getElementById("resumeCode").value = "CH24R-40001-9.10.10--7.29.25.9";
+    document.getElementById("resumeBtn").click();
+    await new Promise(function(r) { setTimeout(r, 1200); });
+    t("fixed quit-at-draft code opens the draft", S.screen === "draft");
+    var sPk = SND.log.length;
+    key("1");
+    await new Promise(function(r) { setTimeout(r, 600); });
+    t("draft pick plays the confirm chime", SND.log.length >= sPk + 2 && SND.log[sPk] === 660 && SND.log[sPk + 1] === 880);
+    key("q");
+    await new Promise(function(r) { setTimeout(r, 600); });
+    sndJackpot();
+    await new Promise(function(r) { setTimeout(r, 700); });
+    t("jackpot chime is three rising notes", [880, 1108, 1318].every(function(f) { return SND.log.includes(f); }));
+    var sOv = SND.log.length;
+    sndOver();
+    await new Promise(function(r) { setTimeout(r, 400); });
+    t("overdrive sting is three rising notes", SND.log.slice(sOv).join(",") === "392,523,659");
+    // flourish guard: queued jackpot notes die on a screen exit (native title repro)
+    var sJ2 = SND.log.length;
+    sndJackpot(); SND.seq++;
+    await new Promise(function(r) { setTimeout(r, 500); });
+    t("jackpot notes stop after leaving the screen", SND.log.length === sJ2);
+    // pick tick negative: real draft, real pick, immediate quit kills the late tick
+    document.getElementById("resumeCode").value = "CH24R-40001-9.10.10--7.29.25.9";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "draft"; }, 5000);
+    t("draft re-opens for the quit-tick test", !!ok);
+    var sQ = SND.log.length;
+    key("1");
+    var gotPick = await (function() { return new Promise(function(res) { var t0 = Date.now(); (function poll() { if (SND.log.length > sQ || Date.now() - t0 > 3000) res(SND.log.length > sQ); else setTimeout(poll, 5); })(); }); })();
+    key("q");
+    await new Promise(function(r) { setTimeout(r, 300); });
+    t("pick confirm started before the quit", gotPick && SND.log[sQ] === 660);
+    t("pick tick is silent after quitting the draft", S.screen === "title" && SND.log.slice(sQ).indexOf(880) < 0);
+    // flourish wiring: real fired shots on the seeded board (native: call-site revert survived unit pins)
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeCode").value = "CH24R-40001-9.10.10--";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes for flourish wiring", !!ok);
+    S.fast = true; S.aim = 11;
+    var sJ3 = SND.log.length;
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    await new Promise(function(r) { setTimeout(r, 600); });
+    t("jackpot flourish wired to a real shot", !!ok && SND.log.slice(sJ3).join(",").indexOf("880,1108,1318") >= 0);
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes for overdrive wiring", !!ok);
+    var aims = [0, 2, 1], sO = 0;
+    for (var ai = 0; ai < aims.length; ai++) {
+      if (ai === aims.length - 1) sO = SND.log.length;
+      S.aim = aims[ai];
+      key(" ");
+      ok = await until(function() { return !S.playing; }, 20000);
+    }
+    await new Promise(function(r) { setTimeout(r, 700); });
+    t("overdrive flourish wired to the third rally", !!ok && SND.log.slice(sO).join(",").indexOf("392,523,659") >= 0);
+    // tension cadence: real one-short shot must actually run the calm step delay (native: multiplier revert survived)
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeCode").value = "CH24R-40001-9.10.10--4.3.15";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("one-short board resumes for the cadence test", !!ok);
+    S.fast = false; S.aim = 12;
+    var delays = [], origST = window.setTimeout;
+    window.setTimeout = function(fn, ms) { delays.push(ms); return origST.apply(window, arguments); };
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 30000);
+    window.setTimeout = origST;
+    t("one-short shot resolves", !!ok);
+    t("tension slows the ball step cadence", S.sawTension && delays.indexOf(48) >= 0);
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
     var pre = document.createElement("pre"); pre.id = "selftest"; pre.textContent = out.join("\n");
