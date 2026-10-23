@@ -67,9 +67,9 @@ src = open(os.path.join(Here, "PtyDrive15.py")).read().split('if __name__ == "__
 src = src.replace('return re.sub(rb"\\x1b\\[[0-9;?]*[A-Za-z]", b"\\n", buf).decode("utf8", "replace")', 'return buf')
 exec(src)
 code = "CH21R-30001-9.10.10-xr-23.12.12x.36r.26/6.34.27.12x.0x.7r/25x.6.33x.36r.27r.10"
-b = Drive(["--resume", code], ["w", "w", "n", "w"]).decode("utf8", "replace")
+b = Drive(["--resume", code], ["w", "w", "n", "w"], wait=0.3).decode("utf8", "replace")
 Check("RUN COMPLETE" in b and "Local best across completed runs" in b and "Saved to" in b, "first complete run shows personal best and says new best")
 Check(os.path.exists(os.environ["CHAIN_BEST_FILE"]) and int(open(os.environ["CHAIN_BEST_FILE"]).read().strip()) > 0, "file written with the run total")
-b = Drive(["--resume", code], ["w", "w", "n", "w"]).decode("utf8", "replace")
+b = Drive(["--resume", code], ["w", "w", "n", "w"], wait=0.3).decode("utf8", "replace")
 Check("Local best across completed runs" in b and "(new)" not in b and "Saved to" not in b, "same run again shows personal best without new-best wording")
 sys.exit(1 if Fails else 0)

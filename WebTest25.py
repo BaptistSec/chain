@@ -309,8 +309,12 @@ api("/api/done?k=" + K, {"gen": r["gen"], "shotId": r["shotId"]})
 
 # marathon loss + record + advance
 api("/api/quit?k=" + K, {})
-st = api("/api/start?k=" + K, {"mode": "marathon"})[1]
-MNO = st["board"]["run"]
+# A random marathon board is nondeterministic here: caught balls refund
+# shots, so blind play can outlast the iteration cap (or even clear the
+# board). Resume a FIXED marathon instead: run 40003 loses to blind aim-0
+# play in exactly the shot limit, every time (engine-verified).
+status, st = api("/api/resume?k=" + K, {"code": "CH24M-40003--"})
+MNO = 40003
 Check("marathon starts", st["screen"] == "play" and st["board"]["marathon"] and st["board"]["limit"] == E.MarathonShotLimit(1))
 for i in range(12):
     if st["screen"] != "play":
@@ -336,6 +340,47 @@ Check("resume loads the run", status == 200 and st2["screen"] == "play")
 Check("resume board hash matches engine ResumeRun", st2["board"]["hash"] == rBoard.Hash())
 status, r = api("/api/resume?k=" + K, {"code": "CH24R-9-9.9.9-zzz"})
 Check("bad run code rejected", status == 400)
+
+# resume branch routing: a quit-at-draft or finished code resumes with the board
+# already over; the session must route to draft / gameover / complete, never trap
+# the board in play. Codes are fixed and engine-verified; every branch is checked
+# against an independent engine ResumeRun replay.
+BRANCHES = [
+    ("midboard run resumes to play", "CH24R-40001-9.10.10--7.29", "play", None),
+    ("won board resumes to draft", "CH24R-40001-9.10.10--7.29.25.9", "draft", None),
+    ("lost run resumes to gameover", "CH24R-40002-9.10.10--0.7.14.21.28.35.3.10.17", "gameover", "runover"),
+    ("marathon midboard resumes to play", "CH24M-40003--", "play", None),
+    ("marathon won board resumes to draft", "CH24M-40003--38r.2", "draft", None),
+    ("marathon loss resumes to gameover", "CH24M-40003--0.0.0.0.0.0.0.0", "gameover", "marathonover"),
+    ("completed run resumes to complete", "CH24R-40001-9.10.10-00-4r.10/3r.33x/30x.11r", "complete", "complete"),
+]
+for name, code, wantScreen, wantKind in BRANCHES:
+    eState, eBoard = E.ResumeRun(code)
+    status, st = api("/api/resume?k=" + K, {"code": code})
+    ok = status == 200 and st["screen"] == wantScreen
+    Check(name, ok)
+    Check(name + " (engine agrees over=" + str(eBoard.Over()) + " won=" + str(eBoard.Won()) + ")",
+          eBoard.Over() == (wantScreen != "play") and (wantScreen not in ("draft", "complete") or eBoard.Won()))
+    if wantScreen == "draft":
+        Check(name + " offers the pending upgrade", st.get("offer") == list(E.RunOffer(eState.Run, eState.K)))
+        status, st2 = api("/api/pick?k=" + K, {"pick": "1"})
+        Check(name + " pick advances to the next board",
+              status == 200 and st2["screen"] == "play" and st2["board"]["k"] == eState.K + 1)
+    if wantKind is not None:
+        Check(name + " result kind", st.get("result", {}).get("kind") == wantKind)
+    if wantKind == "runover":
+        Check(name + " runover records no best", "isNew" not in st["result"] and "saved" not in st["result"])
+    if wantKind == "complete":
+        eState.Boards.append(eBoard)
+        Check(name + " total matches engine", st["result"]["total"] == sum(b.Score for b in eState.Boards))
+        Check(name + " best covers total", st["result"]["best"] >= st["result"]["total"])
+
+# the exact trap QA reported: resumed won board must accept no shot but must
+# reach its draft; after the fix the shot refusal comes from the draft screen,
+# not from a stuck play screen
+status, st = api("/api/resume?k=" + K, {"code": "CH24R-40001-9.10.10--7.29.25.9"})
+status, r = api("/api/shot?k=" + K, {"aim": 7, "ball": "n"})
+Check("resumed won board refuses shots from draft", status == 400 and st["screen"] == "draft")
 
 status, st = api("/api/quit?k=" + K, {})
 Check("quit returns to title with code", status == 200 and st["screen"] == "title" and st["quitCode"].startswith("CH24R-"))

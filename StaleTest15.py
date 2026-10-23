@@ -3,6 +3,10 @@ sys.argv = ["x"]
 src = open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)), "PtyDrive15.py")).read().split('if __name__ == "__main__":')[0]
 src = src.replace('return re.sub(rb"\\x1b\\[[0-9;?]*[A-Za-z]", b"\\n", buf).decode("utf8", "replace")', 'return buf')
 exec(src)
+import os as _os, tempfile as _tf
+_tmp = _tf.mkdtemp()
+_os.environ["CHAIN_BEST_FILE"] = _os.path.join(_tmp, "best.txt")
+_os.environ["CHAIN_MARATHON_FILE"] = _os.path.join(_tmp, "marathon.txt")
 Fails = []
 code = "CH21R-30001-9.10.10-xr-23.12.12x.36r.26/6.34.27.12x.0x.7r/25x.6.33x.36r.27r.10"
 b = Drive(["--resume", code], ["w", "w", "n", "w"])

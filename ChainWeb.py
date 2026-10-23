@@ -121,6 +121,11 @@ class Session:
             self.busy = False
             self.gen += 1
             self.message = "Resumed run " + str(self.state.Run)
+            if self.board.Over():
+                # A quit-at-draft code resumes with the board already won and the
+                # pick still pending; a finished code resumes already over. Route
+                # exactly like a resolved shot instead of trapping the board in play.
+                self.Resolve()
             return self.StateJson(), None
 
     def Preview(self, aim, ball):
@@ -815,10 +820,11 @@ function renderDraft(st) {
     html += '<div class="card" data-pick="' + (i+1) + '"><div class="k">[' + (i+1) + "]</div><div class='name'>" + names[c] +
             "</div><div class='what'>" + notes[c] + "</div><div class='have'>have " + (st.satchel[c] || 0) + " &rarr; " + ((st.satchel[c] || 0)+1) + "</div></div>";
   });
-  html += '</div><div class="row"><button data-pick="0"><span class="k">[0]</span>Skip</button></div>' +
+  html += '</div><div class="row"><button data-pick="0"><span class="k">[0]</span>Skip</button><button data-go="menu"><span class="k">[Q]</span>menu</button></div>' +
           '<p class="code">run code so far: ' + st.code + "</p></div>";
   var el = document.getElementById("draft"); el.innerHTML = html;
   el.querySelectorAll("[data-pick]").forEach(function(n) { n.onclick = function() { pick(n.dataset.pick); }; });
+  el.querySelectorAll("[data-go]").forEach(function(n) { n.onclick = function() { go(n.dataset.go); }; });
 }
 function renderResult(st) {
   var r = st.result, html = "";
@@ -887,6 +893,7 @@ document.addEventListener("keydown", function(ev) {
   }
   if (S.screen === "draft") {
     if (["0","1","2","3"].indexOf(k) >= 0) pick(k);
+    else if (k === "q" || k === "Q" || k === "Escape") go("menu");
     return;
   }
   if (S.screen === "gameover" || S.screen === "complete") {
