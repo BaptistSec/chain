@@ -276,13 +276,13 @@ class Session:
             text = code.strip()
             try:
                 E.ResumeRun(text)
-                run, picks, chunks, legacy, marathon, mid = E.ParseRunCodeFull(text)
+                run, picks, chunks, legacy, marathon, mid, mid2 = E.ParseRunCodeFull(text)
             except (ValueError, KeyError, IndexError) as exc:
                 return None, "That run code did not load: " + str(exc)
-            state = E.RunState(run, legacy, marathon, mid)
-            board = E.Attach(E.RunBoard(run, 1, state.Satchel, legacy, marathon, mid), state)
+            state = E.RunState(run, legacy, marathon, mid, mid2)
+            board = E.Attach(E.RunBoard(run, 1, state.Satchel, legacy, marathon, mid, mid2), state)
             self.watch = {"state": state, "board": board, "picks": picks, "chunks": chunks,
-                          "legacy": legacy, "marathon": marathon, "mid": mid,
+                          "legacy": legacy, "marathon": marathon, "mid": mid, "mid2": mid2,
                           "ci": 0, "si": 0, "done": False}
             self.state = None
             self.board = None
@@ -316,7 +316,7 @@ class Session:
                         state.Satchel[pick] = state.Satchel.get(pick, 0) + 1
                     cleared, score = state.K, board.Score
                     state.K += 1
-                    w["board"] = E.Attach(E.RunBoard(state.Run, state.K, state.Satchel, w["legacy"], w["marathon"], w["mid"]), state)
+                    w["board"] = E.Attach(E.RunBoard(state.Run, state.K, state.Satchel, w["legacy"], w["marathon"], w["mid"], w["mid2"]), state)
                     w["ci"] += 1
                     w["si"] = 0
                     data = self.StateJson()
@@ -424,7 +424,7 @@ class Session:
             if pick != "0":
                 state.Satchel[pick] = state.Satchel.get(pick, 0) + 1
             state.K += 1
-            self.board = E.Attach(E.RunBoard(state.Run, state.K, state.Satchel, state.Legacy, state.Marathon, state.Mid), state)
+            self.board = E.Attach(E.RunBoard(state.Run, state.K, state.Satchel, state.Legacy, state.Marathon, state.Mid, state.Mid2), state)
             self.offer = None
             self.screen = "play"
             self.gen += 1
@@ -459,8 +459,8 @@ class Session:
             s = self.state
             self.old_codes = (self.old_codes + [old])[-5:]
             self._save_codes()
-            self.state = E.RunState(s.Run, s.Legacy, s.Marathon, s.Mid)
-            self.board = E.Attach(E.RunBoard(s.Run, 1, self.state.Satchel, s.Legacy, s.Marathon, s.Mid), self.state)
+            self.state = E.RunState(s.Run, s.Legacy, s.Marathon, s.Mid, s.Mid2)
+            self.board = E.Attach(E.RunBoard(s.Run, 1, self.state.Satchel, s.Legacy, s.Marathon, s.Mid, s.Mid2), self.state)
             self.screen = "play"
             self.result = None
             self.busy = False
@@ -1537,7 +1537,7 @@ function selftest() {
     ok = await until(function() { return S.screen === "title"; }, 5000);
     t("Q quits to title", !!ok);
     var code = (document.getElementById("quitcode").textContent.match(/CH\d+M?R?-[^ ]+/) || [""])[0];
-    t("quit prints the run code", code.indexOf("CH24R-") === 0);
+    t("quit prints the run code", code.indexOf("CH25R-") === 0);
     if (code) {
       document.getElementById("resumeCode").value = code;
       document.getElementById("resumeBtn").click();
@@ -1600,6 +1600,13 @@ function selftest() {
     key("q");
     await new Promise(function(r) { setTimeout(r, 600); });
     t("back at title for pick-sound test", S.screen === "title");
+    document.getElementById("resumeCode").value = "CH23M-40003--38r.2";
+    document.getElementById("watchBtn").click();
+    ok = await until(function() { return S.screen === "watch"; }, 5000);
+    t("CH23M code opens in watch through the mid2 arm", !!ok && S.board.marathon && S.board.hash === "2bb376e6");
+    key("q");
+    await new Promise(function(r) { setTimeout(r, 600); });
+    t("back at title after the mid2 watch", S.screen === "title");
     document.getElementById("resumeCode").value = "CH24R-40001-9.10.10--7.29.25.9";
     document.getElementById("resumeBtn").click();
     await new Promise(function(r) { setTimeout(r, 1200); });

@@ -9,7 +9,7 @@ def Check(ok, text):
     if not ok: Fails.append(text)
 New = ["spiral", "funnel", "stairs", "cross", "zigzag", "bowl"]
 Old = ["diamonds", "waves", "chevrons", "arches", "rings"]
-Check(E.LayoutNames == Old + New + ["pinwheel", "columns"] and E.LegacyLayoutCount == 11, "layout names: eleven CH21 families in their old order, then pinwheel and columns")
+Check(E.LayoutNames == Old + New + ["pinwheel", "columns", "hourglass", "towers"] and E.LegacyLayoutCount == 11 and E.MidLayoutCount == 13 and E.Mid2LayoutCount == 13, "layout names: eleven CH21 families in their old order, then pinwheel and columns (CH23/CH24 set of thirteen), then hourglass and towers")
 First, Count = 30001, 1200
 Fam = collections.defaultdict(collections.Counter)
 Hashes = {}

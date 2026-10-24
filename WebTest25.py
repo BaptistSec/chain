@@ -401,7 +401,7 @@ Check("two abandoned codes differ", first != second)
 api("/api/restart?k=" + K, {})
 status, st = api("/api/quit?k=" + K, {})
 Check("title lists both abandoned codes in order", st.get("oldCodes") == [first, second])
-Check("title still shows the current code", st.get("quitCode", "").startswith("CH24R-"))
+Check("title still shows the current code", st.get("quitCode", "").startswith("CH25R-"))
 api("/api/start?k=" + K, {"mode": "run"})
 st = api("/api/quit?k=" + K, {})[1]
 Check("a new run clears abandoned codes", st.get("oldCodes") == [])
@@ -447,8 +447,9 @@ status, w = api("/api/watch?k=" + K, {"code": "CH24R-40001-9.10.10-00-4r.10/3r.3
 Check("watch starts on board 1", status == 200 and w["screen"] == "watch" and w["board"]["k"] == 1)
 status, r = api("/api/shot?k=" + K, {"aim": 5, "ball": "n"})
 Check("play inputs refused during watch", status == 400)
-eState = E.RunState(40001)
-eBoard = E.Attach(E.RunBoard(40001, 1, eState.Satchel, False, False, False), eState)
+wRun, _, _, wLeg, _, wMid, wMid2 = E.ParseRunCodeFull("CH24R-40001-9.10.10-00-4r.10/3r.33x/30x.11r")
+eState = E.RunState(wRun, wLeg, False, wMid, wMid2)
+eBoard = E.Attach(E.RunBoard(wRun, 1, eState.Satchel, wLeg, False, wMid, wMid2), eState)
 expected = [("shot", 4, "r"), ("shot", 10, "n"), ("advance", 1, "0"),
             ("shot", 3, "r"), ("shot", 33, "x"), ("advance", 2, "0"),
             ("shot", 30, "x"), ("shot", 11, "r"), ("done", True, 9295)]
@@ -465,7 +466,7 @@ while True:
             eState.Boards.append(eBoard)
             eState.Picks.append("0")
             eState.K += 1
-            eBoard = E.Attach(E.RunBoard(40001, eState.K, eState.Satchel, False, False, False), eState)
+            eBoard = E.Attach(E.RunBoard(wRun, eState.K, eState.Satchel, wLeg, False, wMid, wMid2), eState)
     elif "watchAdvance" in d:
         got.append(("advance", d["watchAdvance"]["cleared"], d["watchAdvance"]["pick"]))
     else:
@@ -573,8 +574,9 @@ Check("rejected watch leaves the session untouched",
 PICK_CODE = "CH24M-40003-s-38r.2/20"
 status, w = api("/api/watch?k=" + K, {"code": PICK_CODE})
 Check("pick-bearing marathon watch starts", status == 200 and w["board"]["marathon"] is True)
-eState = E.RunState(40003, marathon=True)
-eBoard = E.Attach(E.RunBoard(40003, 1, eState.Satchel, False, True, False), eState)
+mRun, _, _, mLeg, _, mMid, mMid2 = E.ParseRunCodeFull(PICK_CODE)
+eState = E.RunState(mRun, marathon=True, mid=mMid, mid2=mMid2)
+eBoard = E.Attach(E.RunBoard(mRun, 1, eState.Satchel, mLeg, True, mMid, mMid2), eState)
 hash_ok = True
 sawAdvance = False
 while True:
@@ -588,7 +590,7 @@ while True:
             eState.Picks.append("s")
             eState.Satchel["s"] = eState.Satchel.get("s", 0) + 1
             eState.K += 1
-            eBoard = E.Attach(E.RunBoard(40003, eState.K, eState.Satchel, False, True, False), eState)
+            eBoard = E.Attach(E.RunBoard(mRun, eState.K, eState.Satchel, mLeg, True, mMid, mMid2), eState)
     elif "watchAdvance" in d:
         sawAdvance = True
         Check("recorded pick drives the advance", d["watchAdvance"]["pick"] == "s")
@@ -598,6 +600,24 @@ while True:
         Check("pick-bearing marathon ends open", d["watchDone"]["open"] is True and d["watchDone"]["marathon"] is True)
         break
 Check("pick-bearing marathon hashes match the engine", hash_ok and sawAdvance)
+
+# a CH23M code spectates through the mid2 arm: shots hash-match the engine's own mid2 boards
+status, w = api("/api/watch?k=" + K, {"code": "CH23M-40003--38r.2"})
+Check("mid2 marathon watch starts", status == 200 and w["board"]["marathon"] is True)
+wRun, _, _, wLeg, _, wMid, wMid2 = E.ParseRunCodeFull("CH23M-40003--38r.2")
+Check("mid2 code parses to the CH23 arm", not wLeg and not wMid and wMid2)
+eState = E.RunState(wRun, marathon=True, mid=wMid, mid2=wMid2)
+eBoard = E.Attach(E.RunBoard(wRun, 1, eState.Satchel, wLeg, True, wMid, wMid2), eState)
+hash_ok = True
+while True:
+    status, d = api("/api/watchnext?k=" + K, {})
+    if "frames" in d:
+        eBoard.Play(d["shot"]["aim"], None, d["shot"]["kind"])
+        hash_ok = hash_ok and d["board"]["hash"] == eBoard.Hash()
+        api("/api/watchdone?k=" + K, {"gen": d["gen"], "shotId": d["shotId"]})
+    else:
+        break
+Check("mid2 watch shot hashes match the engine", hash_ok)
 api("/api/quit?k=" + K, {})
 
 # watch is menu-only: a live run is never displaced and its recovery stays good
