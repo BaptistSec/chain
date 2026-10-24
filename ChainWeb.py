@@ -676,6 +676,7 @@ var S = {screen:"title", board:null, aim:19, ball:"n", preview:true, fast:false,
 var cv = document.getElementById("board"), ctx = cv.getContext("2d");
 var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx = [], catchFx = [], fxPump = false, flourishFx = [], recoilT = 0, shotCredits = 0, ambientT = 0, ambientOn = false, textFx = [];
 var winFx = null;
+var dimFx = null, dockRender = 25;
 function jackpotUp() { var b = S.board; return !!(b && b.jackpot && gridMap[b.jackpot[0]+","+b.jackpot[1]]); }
 function ambientNeeded() { return S.screen === "play" && S.board && !S.board.over && (jackpotUp() || S.board.targetsLeft === 1); }
 function ambientKick() {
@@ -840,8 +841,10 @@ function draw() {
   // floor + dock
   var fy = OY + H*CS;
   ctx.fillStyle = "#2a323d"; ctx.fillRect(OX, fy, W*CS, 6);
-  if (b) { ctx.fillStyle = catchFx.length ? "#ffd24a" : "#ffaf00"; ctx.fillRect(OX + (S.dock-3)*CS, fy-1, 7*CS, 8);
-      for (var dp = 0; dp < 2; dp++) { ctx.fillStyle = dp < dockPipsLeft() ? "#0d1117" : "rgba(13,17,23,.18)"; circ(OX + (S.dock - 1 + dp*2)*CS, fy+3, 2.5); ctx.fill(); } }
+  if (b) {
+    dockRender += (S.dock - dockRender) * 0.22; if (Math.abs(S.dock - dockRender) < 0.05) dockRender = S.dock;
+    ctx.fillStyle = catchFx.length ? "#ffd24a" : "#ffaf00"; ctx.fillRect(OX + (dockRender-3)*CS, fy-1, 7*CS, 8);
+      for (var dp = 0; dp < 2; dp++) { ctx.fillStyle = dp < dockPipsLeft() ? "#0d1117" : "rgba(13,17,23,.18)"; circ(OX + (dockRender - 1 + dp*2)*CS, fy+3, 2.5); ctx.fill(); } }
   // cannon + aim
   var cp = cellXY(25, 0), kick = recoilT > 0 ? -Math.min(recoilT, 4) : 0;
   if (recoilT > 0) recoilT--;
@@ -900,6 +903,11 @@ function draw() {
     ctx.fillStyle = "#0d1117"; ctx.fillText(fx2.text, tx+1, ty+1);
     ctx.fillStyle = "rgba(" + fx2.rgb + ",1)"; ctx.fillText(fx2.text, tx, ty);
     ctx.restore();
+  }
+  if (dimFx && dimFx.g === S.gen && dimFx.a > 0.02) {
+    ctx.fillStyle = "rgba(255,95,95," + (0.22 * dimFx.a) + ")";
+    ctx.fillRect(OX, OY, W*CS, H*CS);
+    dimFx.a *= 0.94;
   }
   if (winFx && winFx.g === S.gen && winFx.a > 0.02) {
     ctx.fillStyle = "rgba(255,210,74," + (0.30 * winFx.a) + ")";
@@ -1107,7 +1115,7 @@ function startFxPump() {
   fxPump = true;
   (function pump() {
     draw();
-    if (popFx.length || slideFx.length || catchFx.length || flourishFx.length || textFx.length || (winFx && winFx.a > 0.02) || S.shake > 0.3) setTimeout(pump, 50);
+    if (popFx.length || slideFx.length || catchFx.length || flourishFx.length || textFx.length || (winFx && winFx.a > 0.02) || (dimFx && dimFx.g === S.gen && dimFx.a > 0.02) || (!S.playing && Math.abs(S.dock - dockRender) > 0.05) || S.shake > 0.3) setTimeout(pump, 50);
     else fxPump = false;
   })();
 }
@@ -1129,7 +1137,7 @@ function playShot(resp, done) {
       var ev = tl[i++];
       if (ev.b) {
         ballPos = ev.b; trail.push(ev.b); if (trail.length > 10) trail.shift();
-        if (typeof ev.d === "number") S.dock = ev.d;
+        if (typeof ev.d === "number") { S.dock = ev.d; dockRender = ev.d; }
         moved++;
       } else {
         applyShotEvent(ev, resp.gen, resp.shot && resp.shot.kind === "x");
@@ -1177,7 +1185,12 @@ function applyState(st) {
     document.getElementById("oldcodes").innerHTML = (st.oldCodes || []).map(function(c) { return "Before the restart: " + c; }).join("<br>");
     S.board = null; draw(); return;
   }
-  if (st.board) { S.board = st.board; if (!S.playing) { syncGrid(st.board.grid); S.dock = st.board.dock; } }
+  if (st.board) {
+    if (!S.board) dockRender = st.board.dock;
+    S.board = st.board; if (!S.playing) { syncGrid(st.board.grid); S.dock = st.board.dock; }
+    if (!S.playing) startFxPump();
+  }
+  if (st.screen === "gameover" && prevScreen !== "gameover" && st.result && (st.result.kind === "runover" || st.result.kind === "marathonover")) { dimFx = {a: 1, g: S.gen}; startFxPump(); }
   show("draft", st.screen === "draft"); show("result", st.screen === "gameover" || st.screen === "complete");
   if (prevScreen && prevScreen !== st.screen) {
     if (st.screen === "draft" || st.screen === "complete") sndWin();
@@ -1731,6 +1744,7 @@ function selftest() {
     ctx.fillRect = origFill;
     t("last target pops a gold clear burst", !!ok && !!ok2 && burstCells >= 27);
     t("clear burst flashes the board gold", fillSeen.length >= 1);
+    t("board clear does not dim the board", !dimFx);
     if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
     document.getElementById("resumeBtn").click();
     ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
@@ -1739,6 +1753,41 @@ function selftest() {
     for (var q = 0; q < 9; q++) { key(" "); ok = await until(function() { return !S.playing; }, 20000); if (!ok) break; }
     var ok3 = await until(function() { return S.screen === "gameover"; }, 5000);
     t("run over without a clear stays quiet", !!ok && !!ok3 && !winFx);
+    var redSeen = [], origFill2 = ctx.fillRect;
+    ctx.fillRect = function() { var cs = "" + ctx.fillStyle; if ((cs.indexOf("255, 95, 95") >= 0 || cs.indexOf("255,95,95") >= 0) && redSeen.indexOf(cs) < 0) redSeen.push(cs); return origFill2.apply(this, arguments); };
+    ok = await until(function() { return dimFx; }, 3000);
+    await new Promise(function(r) { setTimeout(r, 600); });
+    ctx.fillRect = origFill2;
+    t("run over dims the board red", !!ok && redSeen.length >= 1);
+    key("Enter");
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    redSeen = [];
+    ctx.fillRect = function() { var cs = "" + ctx.fillStyle; if ((cs.indexOf("255, 95, 95") >= 0 || cs.indexOf("255,95,95") >= 0) && redSeen.indexOf(cs) < 0) redSeen.push(cs); return origFill2.apply(this, arguments); };
+    await new Promise(function(r) { setTimeout(r, 800); });
+    ctx.fillRect = origFill2;
+    t("run over dim does not bleed into the next run", !!ok && redSeen.length === 0);
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("seeded board resumes for the dock glide", !!ok);
+    var dockXs = [], origFill3 = ctx.fillRect;
+    ctx.fillRect = function(x) { var cs = "" + ctx.fillStyle; if ((cs === "#ffaf00" || cs === "#ffd24a") && !S.playing && dockXs.indexOf(x) < 0) dockXs.push(x); return origFill3.apply(this, arguments); };
+    S.fast = true; S.aim = 8;
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    await new Promise(function(r) { setTimeout(r, 2500); });
+    ctx.fillRect = origFill3;
+    t("dock glides to its new spot after a shot", !!ok && S.board.dock !== 3 && dockXs.length >= 3);
+    t("dock glide settles on the engine spot", Math.abs(dockRender - S.dock) < 0.06);
+    var flightFrames = [], origFill4 = ctx.fillRect;
+    ctx.fillRect = function(x) { var cs = "" + ctx.fillStyle; if ((cs === "#ffaf00" || cs === "#ffd24a") && ballPos) flightFrames.push({x: x, want: OX + (S.dock-3)*CS}); return origFill4.apply(this, arguments); };
+    S.fast = true; S.aim = 8;
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    ctx.fillRect = origFill4;
+    var fBad = 0, fXs = [];
+    for (var ff = 0; ff < flightFrames.length; ff++) { if (flightFrames[ff].x !== flightFrames[ff].want) fBad++; if (fXs.indexOf(flightFrames[ff].x) < 0) fXs.push(flightFrames[ff].x); }
+    t("dock follows the engine dock during flight", !!ok && flightFrames.length >= 3 && fXs.length >= 2 && fBad === 0);
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
     var pre = document.createElement("pre"); pre.id = "selftest"; pre.textContent = out.join("\n");
