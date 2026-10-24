@@ -678,6 +678,7 @@ var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx
 var winFx = null;
 var dimFx = null, dockRender = 25;
 var arriveFx = null, wantArrive = false;
+var scoreFx = null, scoreShown = 0, justArrived = false;
 var lastBoardId = null;
 function jackpotUp() { var b = S.board; return !!(b && b.jackpot && gridMap[b.jackpot[0]+","+b.jackpot[1]]); }
 function ambientNeeded() { return S.screen === "play" && S.board && !S.board.over && (jackpotUp() || S.board.targetsLeft === 1); }
@@ -958,6 +959,7 @@ function syncGrid(grid) {
 function renderHud() {
   var b = S.board;
   if (!b) return;
+  var arrivedNow = justArrived; justArrived = false;
   var who = b.marathon ? ("marathon <b>" + b.run + "</b> · board <b>" + b.k + "</b>")
                        : ("run <b>" + b.run + "</b> · board <b>" + b.k + "</b> of <b>3</b>");
   document.getElementById("who").innerHTML = "CHAIN &nbsp;" + who + (b.style ? ' <span style="color:var(--dim)">(' + b.style + ")</span>" : "");
@@ -968,7 +970,13 @@ function renderHud() {
     "targets <b>" + b.targetsLeft + "</b> / quota " + b.quota + " &nbsp; " + pips +
     (b.streak > 1 ? ' &nbsp; streak <b style="color:var(--good)">x' + Math.min(b.streak, 4) + "</b>" : "") +
     ' &nbsp; <span style="color:var(--dim)">od</span> ' + "#".repeat(b.meter) + "-".repeat(3 - b.meter);
-  document.getElementById("score").textContent = b.score;
+  var scoreTgt = b.score;
+  if (!arrivedNow && !S.playing && scoreTgt > scoreShown && !(scoreFx && scoreFx.to === scoreTgt && scoreFx.g === S.gen)) {
+    scoreFx = {from: scoreShown, to: scoreTgt, t: performance.now(), dur: 500, g: S.gen, bid: b.run + ":" + b.k};
+    tickScore();
+  } else if (arrivedNow || scoreTgt < scoreShown || !scoreFx || scoreFx.g !== S.gen) {
+    scoreFx = null; showScore(scoreTgt);
+  }
   if (S.screen === "watch") {
     document.getElementById("balls").innerHTML = '<span style="color:var(--gold)">WATCH</span>' +
       (S.watchAuto ? ' <span style="color:var(--dim)">auto</span>' : "") +
@@ -1118,6 +1126,16 @@ function applyShotEvent(ev, gen, blast) {
   });
   startFxPump();
 }
+function showScore(v) { scoreShown = v; document.getElementById("score").textContent = v; }
+function tickScore() {
+  if (!scoreFx) return;
+  if (scoreFx.g !== S.gen) { scoreFx = null; return; }
+  var p = (performance.now() - scoreFx.t) / scoreFx.dur;
+  if (p >= 1) { showScore(scoreFx.to); scoreFx = null; return; }
+  var e = 1 - (1 - p) * (1 - p);
+  showScore(Math.round(scoreFx.from + (scoreFx.to - scoreFx.from) * e));
+  setTimeout(tickScore, 50);
+}
 function startFxPump() {
   if (fxPump) return;
   fxPump = true;
@@ -1179,6 +1197,7 @@ function applyState(st) {
     textFx = textFx.filter(function(f) { return f.g === S.gen; });
     if (winFx && winFx.g !== S.gen) winFx = null;
     if (arriveFx && arriveFx.g !== S.gen) arriveFx = null;
+    if (scoreFx && scoreFx.g !== S.gen) scoreFx = null;
   }
   show("title", st.screen === "title"); show("game", st.screen !== "title");
   if (st.screen === "title") {
@@ -1197,7 +1216,7 @@ function applyState(st) {
   if (st.board) {
     if (!S.board) dockRender = st.board.dock;
     var bid = st.board.run + ":" + st.board.k;
-    if (wantArrive || bid !== lastBoardId) { lastBoardId = bid; arriveFx = {t: performance.now(), g: S.gen}; } wantArrive = false;
+    if (wantArrive || bid !== lastBoardId) { lastBoardId = bid; arriveFx = {t: performance.now(), g: S.gen}; justArrived = true; } wantArrive = false;
     S.board = st.board; if (!S.playing) { syncGrid(st.board.grid); S.dock = st.board.dock; }
     if (!S.playing) startFxPump();
   }
@@ -1854,6 +1873,29 @@ function selftest() {
     key("p");
     t("preview during arrival reveals the full board", arrMid2 && arriveFx === null && S.preview);
     key("p");
+    go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000);
+    var scEl = document.getElementById("score"), scSeen = [], scDesc = Object.getOwnPropertyDescriptor(Node.prototype, "textContent");
+    Object.defineProperty(scEl, "textContent", { configurable: true, get: scDesc.get, set: function(v) { if (scSeen.indexOf(String(v)) < 0) scSeen.push(String(v)); return scDesc.set.call(this, v); } });
+    document.getElementById("resumeCode").value = "CH24R-40003-9.10.10--4";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    await new Promise(function(r) { setTimeout(r, 900); });
+    t("resumed board shows its score in full, no tick", !!ok && scSeen.length === 1 && scSeen[0] === "900");
+    dockRender = S.dock;
+    scSeen = [];
+    S.fast = true; S.aim = 3;
+    key(" ");
+    for (var z = 0; z < 200 && S.playing; z++) { dockRender = S.dock; await new Promise(function(r) { setTimeout(r, 50); }); }
+    ok = !S.playing;
+    var ambFree = !!S.board && !jackpotUp() && S.board.targetsLeft > 1;
+    var scoreFinal = S.board.score;
+    await new Promise(function(r) { setTimeout(r, 800); });
+    var scMid = 0, scOver = false;
+    for (var si = 0; si < scSeen.length; si++) { var sv = parseInt(scSeen[si], 10); if (sv > 900 && sv < scoreFinal) scMid++; if (sv > scoreFinal) scOver = true; }
+    t("score ticks up after a scoring shot", !!ok && scoreFinal > 900 && scMid >= 2);
+    t("score tick settles on the true score", scSeen.length > 0 && scSeen[scSeen.length - 1] === String(scoreFinal) && !scOver && String(document.getElementById("score").textContent) === String(scoreFinal));
+    t("score tick animates without ambient help", ambFree && scMid >= 2);
+    delete scEl.textContent;
     out.push("checks " + out.length + " complete");
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
