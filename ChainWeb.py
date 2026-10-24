@@ -566,6 +566,15 @@ PAGE = r"""<!DOCTYPE html>
     overflow-y: auto; overflow-x: hidden;
   }
   .overlay .sheet { margin: auto; }
+  .overlay.float { position: fixed; z-index: 30; padding: 2vh 12px 0; border-radius: 0; }
+  .overlay.float .sheet { margin: 0 auto; padding: 12px 14px; }
+  .overlay.float .sheet h2 { margin-bottom: 6px; }
+  .overlay.float .sheet p { margin: 4px 0; }
+  .overlay.float .sheet .row { margin-top: 8px; }
+  .overlay.float .sheet .code { margin-top: 6px; }
+  .overlay.float .card { display: block; width: auto; margin: 6px 0 0; padding: 7px 12px; }
+  .overlay.float .card .name { margin: 3px 0 2px; }
+  .overlay.float .card .what { min-height: 0; margin-top: 2px; }
   .overlay-fixed {
     position: fixed; inset: 0; background: rgba(16,20,26,.92); z-index: 30;
     display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 4vh 12px;
@@ -715,6 +724,18 @@ function show(id, on) {
   document.getElementById(id).classList.toggle("hidden", !on);
   if (on) requestAnimationFrame(refreshCues);
 }
+function fitSheet(id) {
+  var el = document.getElementById(id), sheet = el.querySelector(".sheet");
+  if (!sheet) return;
+  el.classList.remove("float");
+  if (sheet.scrollHeight > el.clientHeight - 8 || el.scrollWidth > el.clientWidth + 1) el.classList.add("float");
+}
+window.addEventListener("resize", function() {
+  requestAnimationFrame(function() {
+    if (!document.getElementById("draft").classList.contains("hidden")) fitSheet("draft");
+    if (!document.getElementById("result").classList.contains("hidden")) fitSheet("result");
+  });
+});
 /* scroll affordance: an accent chevron pinned at the bottom of an overlay while
    more content sits below; disappears at the end and when nothing overflows */
 function refreshCues() {
@@ -1248,6 +1269,7 @@ function renderDraft(st) {
   el.querySelectorAll("[data-pick]").forEach(function(n) { n.onclick = function() { pick(n.dataset.pick); }; });
   el.querySelectorAll("[data-go]").forEach(function(n) { n.onclick = function() { go(n.dataset.go); }; });
   wireSnd(el);
+  fitSheet("draft");
 }
 function renderResult(st) {
   var r = st.result, html = "";
@@ -1269,6 +1291,7 @@ function renderResult(st) {
   var el = document.getElementById("result"); el.innerHTML = html;
   el.querySelectorAll("[data-go]").forEach(function(n) { n.onclick = function() { go(n.dataset.go); }; });
   wireSnd(el);
+  fitSheet("result");
 }
 function startWatch(st) {
   S.preview = false; S.watchAuto = false; S.aim = 19; S.ball = "n"; ballPos = null; trail = [];
@@ -1971,6 +1994,37 @@ function selftest() {
     var wt9 = stEl.getBoundingClientRect().width;
     S.board.targetsLeft = tlKeep; renderHud();
     t("targets count width holds across digit counts", Math.abs(wt12 - wt9) < 0.5);
+    go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000);
+    document.getElementById("resumeCode").value = "CH24R-40001-9.10.10--4.3.15";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    var dOv = document.getElementById("draft"), di;
+    dOv.style.height = "200px";
+    S.fast = true; S.aim = 12; key(" ");
+    ok = await until(function() { return S.screen === "draft"; }, 20000) && ok;
+    await new Promise(function(r) { setTimeout(r, 300); });
+    dOv.style.height = "";
+    var dCards = dOv.querySelectorAll(".card").length;
+    var dFloat = dOv.classList.contains("float"), dPos = getComputedStyle(dOv).position, dDisp = getComputedStyle(dOv.querySelector(".card")).display;
+    var dBtns = dOv.querySelectorAll("button"), dVis = dBtns.length > 0;
+    for (di = 0; di < dBtns.length; di++) { var dbr = dBtns[di].getBoundingClientRect(); if (dbr.bottom > innerHeight + 1 || dbr.top < -1) dVis = false; }
+    t("cramped draft floats and shows every option", ok && dCards === 3 && dFloat && dPos === "fixed" && dDisp === "block" && dVis && dOv.scrollHeight <= dOv.clientHeight + 2);
+    dOv.classList.add("hidden"); dOv.classList.remove("float");
+    var rOv = document.getElementById("result");
+    rOv.classList.remove("hidden");
+    rOv.style.height = "200px";
+    renderResult({result:{kind:"gameover", k:S.board ? S.board.k : 1, score:100, code:"", next:1}});
+    rOv.style.height = "";
+    var rFloat = rOv.classList.contains("float"), rBtns = rOv.querySelectorAll("button"), rVis = rBtns.length > 0;
+    for (di = 0; di < rBtns.length; di++) { var rbr = rBtns[di].getBoundingClientRect(); if (rbr.bottom > innerHeight + 1 || rbr.top < -1) rVis = false; }
+    t("cramped result sheet floats and keeps every action visible", rFloat && getComputedStyle(rOv).position === "fixed" && rVis && rOv.scrollHeight <= rOv.clientHeight + 2);
+    var rafN = 0, origRaf = window.requestAnimationFrame;
+    window.requestAnimationFrame = function(cb) { rafN++; return origRaf(cb); };
+    window.dispatchEvent(new Event("resize"));
+    await new Promise(function(r) { origRaf(function() { origRaf(r); }); });
+    window.requestAnimationFrame = origRaf;
+    t("resize refits a settled overlay through the deferred listener", rafN > 0 && !rOv.classList.contains("float"));
+    rOv.classList.add("hidden");
     out.push("checks " + out.length + " complete");
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
