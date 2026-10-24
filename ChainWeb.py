@@ -966,10 +966,13 @@ function renderHud() {
   var pips = "";
   for (var i = 0; i < b.limit; i++) pips += '<span style="color:' + (i < b.shots ? "var(--gold)" : "#3a4450") + '">&#9679;</span>';
   if (!b.over && b.limit + (b.extra || 0) - b.shots <= 2) pips = '<span class="lowshots">' + pips + "</span>";
+  var bid20 = b.run + ":" + b.k;
+  if (S.tlwBid !== bid20) { S.tlwBid = bid20; S.tlw = 1; }
+  S.tlw = Math.max(S.tlw, String(b.targetsLeft).length);
   document.getElementById("stats").innerHTML =
-    "targets <b>" + b.targetsLeft + "</b> / quota " + b.quota + " &nbsp; " + pips +
-    (b.streak > 1 ? ' &nbsp; streak <b style="color:var(--good)">x' + Math.min(b.streak, 4) + "</b>" : "") +
-    ' &nbsp; <span style="color:var(--dim)">od</span> ' + "#".repeat(b.meter) + "-".repeat(3 - b.meter);
+    "targets <b style=\"display:inline-block;min-width:" + S.tlw + "ch;text-align:right\">" + b.targetsLeft + "</b> / quota " + b.quota + " &nbsp; " + pips +
+    '<span style="visibility:' + (b.streak > 1 ? "visible" : "hidden") + '"> &nbsp; streak <b style="color:var(--good)">x' + Math.max(2, Math.min(b.streak, 4)) + "</b></span>" +
+    ' &nbsp; <span style="color:var(--dim)">od</span> <span style="font-family:Consolas,monospace">' + "#".repeat(b.meter) + "-".repeat(3 - b.meter) + "</span>";
   var scoreTgt = b.score;
   document.getElementById("score").style.minWidth = String(scoreTgt).length + "ch";
   if (!arrivedNow && !S.playing && scoreTgt > scoreShown && !(scoreFx && scoreFx.to === scoreTgt && scoreFx.g === S.gen)) {
@@ -1938,6 +1941,36 @@ function selftest() {
     var wSame = slotW.length >= 2, fin2 = String(S.board && S.board.score);
     for (var wi = 1; wi < slotW.length; wi++) { if (Math.abs(slotW[wi][1] - slotW[0][1]) > 0.5) wSame = false; }
     t("score slot width holds through a digit-growing tally", !!ok && wSame && String(preScore).length < fin2.length);
+    go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000);
+    document.getElementById("resumeCode").value = "CH24R-40003-9.10.10--4";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    await new Promise(function(r) { setTimeout(r, 300); });
+    var stEl = document.getElementById("stats");
+    S.fast = true; S.aim = 3; key(" ");
+    ok = await until(function() { return !S.playing; }, 20000) && ok;
+    await new Promise(function(r) { setTimeout(r, 300); });
+    var hw0 = stEl.getBoundingClientRect().width, hid0 = stEl.innerHTML.indexOf("visibility:hidden") >= 0, m0 = S.board.meter;
+    S.aim = 15; key(" ");
+    ok = await until(function() { return !S.playing; }, 20000) && ok;
+    await new Promise(function(r) { setTimeout(r, 300); });
+    var hw1 = stEl.getBoundingClientRect().width;
+    S.aim = 9; key(" ");
+    ok = await until(function() { return !S.playing; }, 20000) && ok;
+    await new Promise(function(r) { setTimeout(r, 300); });
+    var hw2 = stEl.getBoundingClientRect().width, vis2 = stEl.innerHTML.indexOf("visibility:visible") >= 0, st2 = S.board.streak, m2 = S.board.meter;
+    S.aim = 12; key(" ");
+    ok = await until(function() { return !S.playing; }, 20000) && ok;
+    await new Promise(function(r) { setTimeout(r, 300); });
+    var hw3 = stEl.getBoundingClientRect().width, hid3 = stEl.innerHTML.indexOf("visibility:hidden") >= 0, st3 = S.board.streak;
+    t("stats width holds as streak and meter change", ok && hid0 && vis2 && hid3 && st2 > 1 && st3 < 2 && m2 > m0 && Math.abs(hw1 - hw0) < 0.5 && Math.abs(hw2 - hw0) < 0.5 && Math.abs(hw3 - hw0) < 0.5);
+    var tlKeep = S.board.targetsLeft;
+    S.board.targetsLeft = 12; renderHud();
+    var wt12 = stEl.getBoundingClientRect().width;
+    S.board.targetsLeft = 9; renderHud();
+    var wt9 = stEl.getBoundingClientRect().width;
+    S.board.targetsLeft = tlKeep; renderHud();
+    t("targets count width holds across digit counts", Math.abs(wt12 - wt9) < 0.5);
     out.push("checks " + out.length + " complete");
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
