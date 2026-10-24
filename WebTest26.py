@@ -65,6 +65,8 @@ if lines:
         print("   " + line)
     bad = [l for l in lines if l.startswith("FAIL")]
     Check("no client-side failures", not bad)
-    Check("full check list ran", len(lines) >= 15)
+    import re as _re
+    _m = _re.match(r"checks (\d+) complete$", lines[-1]) if lines else None
+    Check("selftest ran to completion (terminal marker)", bool(_m) and int(_m.group(1)) == len(lines) - 1)
 print("FAILS", len(Fails))
 sys.exit(1 if Fails else 0)

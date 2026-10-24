@@ -677,6 +677,8 @@ var cv = document.getElementById("board"), ctx = cv.getContext("2d");
 var gridMap = {}, ballPos = null, trail = [], popFx = [], pathDots = [], slideFx = [], catchFx = [], fxPump = false, flourishFx = [], recoilT = 0, shotCredits = 0, ambientT = 0, ambientOn = false, textFx = [];
 var winFx = null;
 var dimFx = null, dockRender = 25;
+var arriveFx = null, wantArrive = false;
+var lastBoardId = null;
 function jackpotUp() { var b = S.board; return !!(b && b.jackpot && gridMap[b.jackpot[0]+","+b.jackpot[1]]); }
 function ambientNeeded() { return S.screen === "play" && S.board && !S.board.over && (jackpotUp() || S.board.targetsLeft === 1); }
 function ambientKick() {
@@ -736,6 +738,11 @@ document.addEventListener("scroll", function(ev) {
 function drawCell(x, y, sym, bumps, jackpot) {
   var px = OX + x*CS, py = OY + y*CS, c = CS;
   ctx.save();
+  if (arriveFx) {
+    var ael = performance.now() - arriveFx.t - (y * 20 + (x % 4) * 14);
+    if (ael < 0) { ctx.restore(); return; }
+    if (ael < 130) ctx.globalAlpha = ael / 130;
+  }
   if (sym === "#") {
     ctx.fillStyle = jackpot ? "#ff5fd0" : "#ffd24a";
     ctx.strokeStyle = jackpot ? "#a03090" : "#9a7d10";
@@ -1059,9 +1066,10 @@ function sndToggle() {
   if (S.board) renderHud();
 }
 function wireSnd(root) { root.querySelectorAll("[data-snd]").forEach(function(n) { n.onclick = function() { sndToggle(); }; }); }
+function revealBoard() { if (arriveFx) { arriveFx = null; draw(); } }
 function fire() {
   if (S.playing || !S.board || S.board.over || S.screen !== "play") return;
-  S.playing = true; pathDots = []; recoilT = 6; sndFire();
+  revealBoard(); S.playing = true; pathDots = []; recoilT = 6; sndFire();
   api("/api/shot", {aim: S.aim, ball: S.ball}).then(function(resp) {
     S.ball = "n"; S.lastShot = resp.shot;
     playShot(resp, function() {
@@ -1115,7 +1123,7 @@ function startFxPump() {
   fxPump = true;
   (function pump() {
     draw();
-    if (popFx.length || slideFx.length || catchFx.length || flourishFx.length || textFx.length || (winFx && winFx.a > 0.02) || (dimFx && dimFx.g === S.gen && dimFx.a > 0.02) || (!S.playing && Math.abs(S.dock - dockRender) > 0.05) || S.shake > 0.3) setTimeout(pump, 50);
+    if (popFx.length || slideFx.length || catchFx.length || flourishFx.length || textFx.length || (winFx && winFx.a > 0.02) || (dimFx && dimFx.g === S.gen && dimFx.a > 0.02) || (arriveFx && performance.now() - arriveFx.t < 1100) || (!S.playing && Math.abs(S.dock - dockRender) > 0.05) || S.shake > 0.3) setTimeout(pump, 50);
     else fxPump = false;
   })();
 }
@@ -1170,6 +1178,7 @@ function applyState(st) {
     flourishFx = flourishFx.filter(function(f) { return f.g === S.gen; });
     textFx = textFx.filter(function(f) { return f.g === S.gen; });
     if (winFx && winFx.g !== S.gen) winFx = null;
+    if (arriveFx && arriveFx.g !== S.gen) arriveFx = null;
   }
   show("title", st.screen === "title"); show("game", st.screen !== "title");
   if (st.screen === "title") {
@@ -1187,6 +1196,8 @@ function applyState(st) {
   }
   if (st.board) {
     if (!S.board) dockRender = st.board.dock;
+    var bid = st.board.run + ":" + st.board.k;
+    if (wantArrive || bid !== lastBoardId) { lastBoardId = bid; arriveFx = {t: performance.now(), g: S.gen}; } wantArrive = false;
     S.board = st.board; if (!S.playing) { syncGrid(st.board.grid); S.dock = st.board.dock; }
     if (!S.playing) startFxPump();
   }
@@ -1279,14 +1290,14 @@ function watchStep() {
   }).catch(function(e) { S.playing = false; S.watchAuto = false; S.msg = e.error || "watch step refused"; renderHud(); });
 }
 function go(what) {
-  if (what === "advance") api("/api/advance", {}).then(applyState);
+  if (what === "advance") api("/api/advance", {}).then(function(st) { wantArrive = true; applyState(st); });
   else if (what === "restart") api("/api/restart", {}).then(applyState);
   else api("/api/quit", {}).then(applyState);
 }
 function pick(choice) { api("/api/pick", {pick: choice}).then(function(st) { sndPick(); applyState(st); }); }
 function start(mode) {
   document.getElementById("startErr").textContent = "";
-  api("/api/start", {mode: mode}).then(function(st) { S.aim = 19; S.ball = "n"; applyState(st); })
+  api("/api/start", {mode: mode}).then(function(st) { S.aim = 19; S.ball = "n"; wantArrive = true; applyState(st); })
     .catch(function(e) { document.getElementById("startErr").textContent = e.error || "could not start"; });
 }
 function helpHtml() {
@@ -1345,7 +1356,7 @@ document.addEventListener("keydown", function(ev) {
   if (k === "ArrowLeft" || k === "a") { S.aim = Math.max(0, S.aim - 1); refreshPreview(); draw(); ev.preventDefault(); }
   else if (k === "ArrowRight" || k === "d") { S.aim = Math.min(DIRS.length - 1, S.aim + 1); refreshPreview(); draw(); ev.preventDefault(); }
   else if (k === " " || k === "Enter") { fire(); ev.preventDefault(); }
-  else if (k === "p" || k === "P") { S.preview = !S.preview; refreshPreview(); draw(); }
+  else if (k === "p" || k === "P") { S.preview = !S.preview; if (S.preview) revealBoard(); refreshPreview(); draw(); }
   else if (k === "f" || k === "F") { S.fast = !S.fast; }
   else if (k === "r" || k === "R") { api("/api/restart", {}).then(applyState); }
   else if (k === "q" || k === "Q" || k === "Escape") { api("/api/quit", {}).then(applyState); }
@@ -1428,13 +1439,13 @@ document.getElementById("menu").addEventListener("click", function(ev) {
 document.getElementById("watchBtn").onclick = function() {
   var code = document.getElementById("resumeCode").value.trim();
   document.getElementById("startErr").textContent = "";
-  api("/api/watch", {code: code}).then(startWatch)
+  api("/api/watch", {code: code}).then(function(st) { wantArrive = true; startWatch(st); })
     .catch(function(e) { document.getElementById("startErr").textContent = e.error || "could not watch"; });
 };
 document.getElementById("resumeBtn").onclick = function() {
   var code = document.getElementById("resumeCode").value.trim();
   if (!code) return;
-  api("/api/resume", {code: code}).then(function(st) { S.aim = 19; S.ball = "n"; applyState(st); })
+  api("/api/resume", {code: code}).then(function(st) { S.aim = 19; S.ball = "n"; wantArrive = true; applyState(st); })
     .catch(function(e) { document.getElementById("startErr").textContent = e.error || "could not load"; });
 };
 
@@ -1763,9 +1774,23 @@ function selftest() {
     ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
     redSeen = [];
     ctx.fillRect = function() { var cs = "" + ctx.fillStyle; if ((cs.indexOf("255, 95, 95") >= 0 || cs.indexOf("255,95,95") >= 0) && redSeen.indexOf(cs) < 0) redSeen.push(cs); return origFill2.apply(this, arguments); };
+    var partA = 0, allF = 0, partFrames = 0, seenThisFrame = false, origFill5 = ctx.fill, origClear = ctx.clearRect;
+    ctx.clearRect = function() { if (seenThisFrame) partFrames++; seenThisFrame = false; return origClear.apply(this, arguments); };
+    ctx.fill = function() { allF++; if (ctx.globalAlpha > 0.01 && ctx.globalAlpha < 0.99) { partA++; seenThisFrame = true; } return origFill5.apply(this, arguments); };
+    dockRender = S.dock;
+    var arrOk = !!arriveFx && arriveFx.g === S.gen;
     await new Promise(function(r) { setTimeout(r, 800); });
     ctx.fillRect = origFill2;
     t("run over dim does not bleed into the next run", !!ok && redSeen.length === 0);
+    if (seenThisFrame) partFrames++;
+    var midPart = partA;
+    await new Promise(function(r) { setTimeout(r, 1200); });
+    partA = 0; allF = 0;
+    draw();
+    ctx.fill = origFill5;
+    ctx.clearRect = origClear;
+    t("boards sweep in on arrival", arrOk && midPart >= 20 && partFrames >= 4);
+    t("arrival sweep completes cleanly", allF >= 10 && partA === 0);
     if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
     document.getElementById("resumeBtn").click();
     ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
@@ -1779,6 +1804,7 @@ function selftest() {
     ctx.fillRect = origFill3;
     t("dock glides to its new spot after a shot", !!ok && S.board.dock !== 3 && dockXs.length >= 3);
     t("dock glide settles on the engine spot", Math.abs(dockRender - S.dock) < 0.06);
+    var arrPreShot = arriveFx;
     var flightFrames = [], origFill4 = ctx.fillRect;
     ctx.fillRect = function(x) { var cs = "" + ctx.fillStyle; if ((cs === "#ffaf00" || cs === "#ffd24a") && ballPos) flightFrames.push({x: x, want: OX + (S.dock-3)*CS}); return origFill4.apply(this, arguments); };
     S.fast = true; S.aim = 8;
@@ -1788,6 +1814,47 @@ function selftest() {
     var fBad = 0, fXs = [];
     for (var ff = 0; ff < flightFrames.length; ff++) { if (flightFrames[ff].x !== flightFrames[ff].want) fBad++; if (fXs.indexOf(flightFrames[ff].x) < 0) fXs.push(flightFrames[ff].x); }
     t("dock follows the engine dock during flight", !!ok && flightFrames.length >= 3 && fXs.length >= 2 && fBad === 0);
+    t("post-shot state push does not sweep", arriveFx === arrPreShot);
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    var arrBefore = arriveFx;
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("explicit reload of the same board sweeps again", !!ok && arriveFx !== arrBefore && arriveFx.g === S.gen);
+    go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000);
+    document.getElementById("resumeCode").value = "CH24R-40003-9.10.10--4";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    dockRender = S.dock;
+    var jFree = !!S.board && !jackpotUp() && S.board.targetsLeft > 1;
+    partA = 0; partFrames = 0; seenThisFrame = false;
+    ctx.clearRect = function() { if (seenThisFrame) partFrames++; seenThisFrame = false; return origClear.apply(this, arguments); };
+    ctx.fill = function() { if (ctx.globalAlpha > 0.01 && ctx.globalAlpha < 0.99) { partA++; seenThisFrame = true; } return origFill5.apply(this, arguments); };
+    var arrOk2 = !!ok && !!arriveFx && arriveFx.g === S.gen;
+    await new Promise(function(r) { setTimeout(r, 700); });
+    if (seenThisFrame) partFrames++;
+    ctx.fill = origFill5; ctx.clearRect = origClear;
+    t("arrival sweep animates without ambient help", jFree && arrOk2 && partFrames >= 3);
+    go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000);
+    document.getElementById("resumeCode").value = "CH24R-40004-9.10.10--";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    await new Promise(function(r) { setTimeout(r, 120); });
+    var arrMid = !!arriveFx && arriveFx.g === S.gen;
+    S.fast = true;
+    key(" ");
+    var snapped = arriveFx === null && S.playing;
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("fire during arrival reveals the full board", arrMid && snapped && !!ok);
+    go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000);
+    document.getElementById("resumeCode").value = "CH24R-40005-9.10.10--";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    await new Promise(function(r) { setTimeout(r, 120); });
+    var arrMid2 = !!arriveFx && arriveFx.g === S.gen;
+    key("p");
+    t("preview during arrival reveals the full board", arrMid2 && arriveFx === null && S.preview);
+    key("p");
+    out.push("checks " + out.length + " complete");
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
     var pre = document.createElement("pre"); pre.id = "selftest"; pre.textContent = out.join("\n");
@@ -1924,7 +1991,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/selftest":
             if not os.environ.get("CHAIN_SELFTEST"):
                 return self.fail("not found", 404)
-            sess.selftest = [str(x)[:200] for x in body.get("lines", [])][:100]
+            sess.selftest = [str(x)[:200] for x in body.get("lines", [])][:400]
             data, err = {"ok": True}, None
         else:
             return self.fail("not found", 404)
