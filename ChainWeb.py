@@ -538,7 +538,7 @@ PAGE = r"""<!DOCTYPE html>
   #hud { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 2px 8px; }
   #hud .who { color: var(--dim); }
   #hud .who b { color: var(--text); font-weight: normal; }
-  #hud .score { font-size: 20px; color: var(--gold); font-family: Consolas, monospace; }
+  #hud .score { font-size: 20px; color: var(--gold); font-family: Consolas, monospace; text-align: right; }
   @keyframes lowpulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
   .lowshots { animation: lowpulse 1.1s infinite; }
   #stage { position: relative; }
@@ -859,7 +859,7 @@ function draw() {
   ctx.fillStyle = "#d7dee6";
   ctx.beginPath(); ctx.moveTo(cp[0]+CS/2-7, OY-8+kick); ctx.lineTo(cp[0]+CS/2+7, OY-8+kick); ctx.lineTo(cp[0]+CS/2, OY+6+kick); ctx.closePath(); ctx.fill();
   if (S.screen === "play" && b && !b.over && !S.playing) {
-    var v = DIRS[S.aim], len = Math.hypot(v[0], v[1]);
+    var v = DIRS[Math.max(0, Math.min(DIRS.length - 1, S.aim | 0))], len = Math.hypot(v[0], v[1]);
     ctx.strokeStyle = "rgba(215,222,230,.55)"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(cp[0]+CS/2, OY+4);
     ctx.lineTo(cp[0]+CS/2 + v[0]/len*34, OY+4 + v[1]/len*34); ctx.stroke();
@@ -971,6 +971,7 @@ function renderHud() {
     (b.streak > 1 ? ' &nbsp; streak <b style="color:var(--good)">x' + Math.min(b.streak, 4) + "</b>" : "") +
     ' &nbsp; <span style="color:var(--dim)">od</span> ' + "#".repeat(b.meter) + "-".repeat(3 - b.meter);
   var scoreTgt = b.score;
+  document.getElementById("score").style.minWidth = String(scoreTgt).length + "ch";
   if (!arrivedNow && !S.playing && scoreTgt > scoreShown && !(scoreFx && scoreFx.to === scoreTgt && scoreFx.g === S.gen)) {
     scoreFx = {from: scoreShown, to: scoreTgt, t: performance.now(), dur: 500, g: S.gen, bid: b.run + ":" + b.k};
     tickScore();
@@ -1896,6 +1897,47 @@ function selftest() {
     t("score tick settles on the true score", scSeen.length > 0 && scSeen[scSeen.length - 1] === String(scoreFinal) && !scOver && String(document.getElementById("score").textContent) === String(scoreFinal));
     t("score tick animates without ambient help", ambFree && scMid >= 2);
     delete scEl.textContent;
+    go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000);
+    document.getElementById("resumeCode").value = "CH24R-40003-9.10.10--4";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    var fzArr = !!ok && !!arriveFx && arriveFx.g === S.gen;
+    var fzFrames = 0, origClearF = ctx.clearRect;
+    ctx.clearRect = function() { fzFrames++; return origClearF.apply(this, arguments); };
+    S.aim = DIRS.length;
+    var fzHi = false; try { draw(); } catch (e) { fzHi = true; }
+    S.aim = -1;
+    var fzLo = false; try { draw(); } catch (e) { fzLo = true; }
+    fzFrames = 0;
+    await new Promise(function(r) { setTimeout(r, 400); });
+    ctx.clearRect = origClearF;
+    t("injected out-of-range aim never throws in draw", fzArr && !fzHi && !fzLo);
+    t("fx pump keeps animating through an injected aim", fzFrames >= 5);
+    S.aim = DIRS.length;
+    S.msg = "";
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 5000);
+    t("rejected out-of-range shot recovers input", !!ok && !S.playing && !!S.msg);
+    S.fast = true; S.aim = 3;
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("legit shot plays after an injected-aim rejection", !!ok && !!S.board);
+    go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000);
+    document.getElementById("resumeCode").value = "CH24R-40003-9.10.10--4";
+    document.getElementById("resumeBtn").click();
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    await new Promise(function(r) { setTimeout(r, 300); });
+    var scEl2 = document.getElementById("score"), scDesc2 = Object.getOwnPropertyDescriptor(Node.prototype, "textContent"), slotW = [];
+    Object.defineProperty(scEl2, "textContent", { configurable: true, get: scDesc2.get, set: function(v) { slotW.push([String(v), scEl2.getBoundingClientRect().width]); return scDesc2.set.call(this, v); } });
+    var preScore = S.board.score;
+    S.fast = true; S.aim = 9;
+    key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    await new Promise(function(r) { setTimeout(r, 800); });
+    delete scEl2.textContent;
+    var wSame = slotW.length >= 2, fin2 = String(S.board && S.board.score);
+    for (var wi = 1; wi < slotW.length; wi++) { if (Math.abs(slotW[wi][1] - slotW[0][1]) > 0.5) wSame = false; }
+    t("score slot width holds through a digit-growing tally", !!ok && wSame && String(preScore).length < fin2.length);
     out.push("checks " + out.length + " complete");
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;
     document.title = "SELFTEST FAILS " + fails;
