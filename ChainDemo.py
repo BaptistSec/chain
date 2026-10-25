@@ -1143,6 +1143,10 @@ Help = [
     "",
     "Marathon (M on the title screen): boards keep coming with rising quotas and, deeper in,",
     "fewer shots. The first board you fail ends the marathon. Your best marathon is saved.",
+    "",
+    "The tour (T on the title screen): nine set boards in a fixed order, each with its own",
+    "quota and shot limit. One failed board ends the tour. Clear all nine to finish it.",
+    "Your best tour is saved.",
 ]
 
 
@@ -1290,6 +1294,38 @@ def MarathonBestLines(best, isNew, saved):
     return lines
 
 
+def TourBestPath():
+    return os.environ.get("CHAIN_TOUR_FILE") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "ChainTour.txt")
+
+
+def RecordTourBest(boards, total):
+    path = TourBestPath()
+    prevBoards, prevTotal, writable = ReadMarathonBest(path)
+    isNew = boards > prevBoards or (boards == prevBoards and total > prevTotal)
+    best = (boards, total) if isNew else (prevBoards, prevTotal)
+    saved = False
+    if isNew and writable:
+        saved = WriteMarathonBest(path, boards, total)
+    return best, isNew, saved
+
+
+def TourBestLines(best, isNew, saved):
+    where = "ChainTour.txt next to the game" if not os.environ.get("CHAIN_TOUR_FILE") else "the file named by CHAIN_TOUR_FILE"
+    lines = [" Local best tour: " + str(best[0]) + " boards, score " + str(best[1]) + (" (new)" if isNew else "")]
+    if isNew and saved:
+        lines.append(" Saved to " + where)
+    elif isNew:
+        lines.append(" Not saved: the best file could not be written (shown on this screen only)")
+    return lines
+
+
+def CodeLines(code, width=76):
+    # Long codes (tour codes especially) overflow the result panel's width cap:
+    # Panel clamps its inner width but never wraps rows, so an over-long code
+    # row prints past the frame and the terminal wraps it outside the border.
+    return [code[i:i + width] for i in range(0, len(code), width)]
+
+
 def DailyRun():
     today = time.localtime()
     return today.tm_year * 10000 + today.tm_mon * 100 + today.tm_mday
@@ -1302,6 +1338,7 @@ def DailyLabel():
 MenuEntries = [
     ("[Enter] start a run", "run"),
     ("[M] marathon", "marathon"),
+    ("[T] the tour", "tour"),
     ("[D] daily run", "daily"),
     ("[H] how to play", "help"),
     ("[Q] quit", "quit"),
@@ -1335,12 +1372,15 @@ def TitleLines(screen, step, page, pick=0):
         lines.append("")
         best, _ = ReadBest(BestPath())
         mBoards, mTotal, _ = ReadMarathonBest(MarathonBestPath())
+        tBoards, tTotal, _ = ReadMarathonBest(TourBestPath())
         records = []
         if best:
             records.append("best run score " + str(best))
         if mBoards:
             records.append("best marathon " + str(mBoards) + " boards, score " + str(mTotal))
-        lines.append(" " * 14 + ("Records: " + ";  ".join(records) if records else "No records yet - finish a run or a marathon and they show here."))
+        if tBoards:
+            records.append("best tour " + str(tBoards) + " boards, score " + str(tTotal))
+        lines.append(" " * 14 + ("Records: " + ";  ".join(records) if records else "No records yet - finish a run, a marathon or the tour and they show here."))
         lines.append("")
         lines.append(" " * 14 + "Same local date, same starting boards. Share your run code to compare;")
         lines.append(" " * 14 + "there is no online leaderboard.")
@@ -1376,6 +1416,8 @@ def TitleScreen(screen, keys):
                 return random.SystemRandom().randint(1, MaxRunNumber), False
             if action == "marathon":
                 return random.SystemRandom().randint(1, MaxRunNumber), True
+            if action == "tour":
+                return 0, False, True
             if action == "daily":
                 return DailyRun(), False
             if action == "help":
@@ -1384,6 +1426,8 @@ def TitleScreen(screen, keys):
                 return None
         elif key == "m":
             return random.SystemRandom().randint(1, MaxRunNumber), True
+        elif key == "t":
+            return 0, False, True
         elif key == "d":
             return DailyRun(), False
         elif key == "h":
@@ -1588,7 +1632,7 @@ class Screen:
         info = getattr(board, "RunInfo", None)
         if info is not None and not self.Watching:
             nxt = "  ".join(KindNames[c] + " x" + str(info.Satchel.get(c, 0)) for c in RunPool if info.Satchel.get(c, 0))
-            label = (" Marathon board " + str(info.K)) if info.Marathon else (" Board " + str(info.K) + "/" + str(len(RunQuotas)))
+            label = (" Tour board " + str(info.K) + "/" + str(TourLength)) if getattr(info, "Tour", False) else (" Marathon board " + str(info.K)) if info.Marathon else (" Board " + str(info.K) + "/" + str(len(RunQuotas)))
             lines.append(label + "  Refunds " + str(sum(x.Refund for x in board.Log)) + "  Dock " + ("used up" if board.DockPaid >= DockCap else str(DockCap - board.DockPaid) + " left") + "  Bonus shots " + str(board.Extra - sum(x.Refund for x in board.Log)) + "  Next: " + nxt)
         if self.Watching:
             controls = " WATCH MODE   " + ("board cleared" if board.Won() else "out of shots" if board.Over() else "[any key] at the end closes it") + "   [Ctrl+C] stops"
@@ -1598,11 +1642,15 @@ class Screen:
                 controls = " " + ("YOU WIN" if board.Won() else "OUT OF SHOTS") + "   [R] same board   [N] next board   [Q] quit and show code"
             elif not board.Won():
                 controls = (" OUT OF SHOTS   [N] end marathon   [R] restart marathon " + str(info.Run) + "   [Q] quit and show code" if info.Marathon
+                            else " OUT OF SHOTS   [N] end the tour   [R] restart the tour   [Q] quit and show code" if getattr(info, "Tour", False)
                             else " OUT OF SHOTS   [N] new run " + str(NextRunNumber(info.Run)) + "   [R] restart run " + str(info.Run) + "   [Q] quit and show code")
-            elif not info.Marathon and info.K >= len(RunQuotas):
+            elif getattr(info, "Tour", False) and info.K >= TourLength:
+                controls = " BOARD CLEARED, LAST BOARD   [N] finish the tour   [R] restart the tour   [Q] quit and show code"
+            elif not info.Marathon and not getattr(info, "Tour", False) and info.K >= len(RunQuotas):
                 controls = " BOARD CLEARED, LAST BOARD   [N] finish the run   [R] restart run " + str(info.Run) + "   [Q] quit and show code"
             else:
-                controls = " BOARD CLEARED   [N] pick an upgrade   [R] restart " + ("marathon " if info.Marathon else "run ") + str(info.Run) + "   [Q] quit and show code"
+                what = "the tour" if getattr(info, "Tour", False) else ("marathon " if info.Marathon else "run ") + str(info.Run)
+                controls = " BOARD CLEARED   [N] pick an upgrade   [R] restart " + what + "   [Q] quit and show code"
         else:
             controls = " [<][>] aim " + str(aim + 1) + "/" + str(len(Directions)) + " " + str(AimDegrees(aim)) + "deg  [Space] fire  [P] preview " + ("on" if preview else "off") + "  [F] fast " + ("on" if self.Fast else "off") + ("  [R] restart  [N] next  [Q] quit" if getattr(board, "RunInfo", None) is not None else "  [R] redo  [N] next  [Q] quit")
         lines.append(controls)
@@ -1898,6 +1946,18 @@ LargeShotPoints = 1500
 RunQuotas = (9, 10, 10)
 RunPool = ["r", "x", "s"]
 RunStart = {"r": 1, "x": 1}
+TourSeeds = (30005, 30056, 30002, 30007, 30015, 30008, 30014, 30021, 30006)   # the curated tour: nine fixed boards, easy families first, hard families late (pins in TourTest26.py)
+TourLength = len(TourSeeds)
+TourQuotas = (9, 10, 10, 11, 11, 12, 12, 12, 12)   # steeper than the marathon ramp: the tour is a short gauntlet
+TourShotLimits = (8, 8, 7, 7, 7, 6, 6, 6, 5)
+
+def TourQuota(k):
+    return TourQuotas[k - 1]
+
+
+def TourShotLimit(k):
+    return TourShotLimits[k - 1]
+
 MarathonQuotas = (8, 8, 9, 9, 10, 10, 11, 11)
 MarathonShots = (8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7)
 MarathonQuotaTop = 12
@@ -1932,18 +1992,29 @@ def RunBoard(run, k, satchel, legacy=False, marathon=False, mid=False, mid2=Fals
     return board
 
 
+def TourBoard(k, satchel):
+    board = Board(TourSeeds[k - 1])
+    quota = TourQuota(k)
+    board.Stock = {c: satchel.get(c, 0) for c in RunPool}
+    board.Credit = max(board.Total - quota, 0)
+    board.Quota = quota
+    board.Limit = TourShotLimit(k)
+    return board
+
+
 def Attach(board, state):
     board.RunInfo = state
     return board
 
 
 class RunState:
-    def __init__(self, run, legacy=False, marathon=False, mid=False, mid2=False):
+    def __init__(self, run, legacy=False, marathon=False, mid=False, mid2=False, tour=False):
         self.Run = run
         self.Legacy = legacy
         self.Marathon = marathon
         self.Mid = mid
         self.Mid2 = mid2
+        self.Tour = tour
         self.K = 1
         self.Satchel = dict(RunStart)
         self.Picks = []
@@ -1952,6 +2023,8 @@ class RunState:
     def Code(self, board=None):
         done = self.Boards + ([board] if board is not None and board not in self.Boards else [])
         shots = "/".join(".".join(str(x.Aim) + ("" if x.Kind == "n" else x.Kind) for x in b.Log) for b in done)
+        if self.Tour:
+            return Version + "T-" + "".join(self.Picks) + "-" + shots
         if self.Marathon:
             return (Mid2Version if self.Mid2 else (MidVersion if self.Mid else Version)) + "M-" + str(self.Run) + "-" + "".join(self.Picks) + "-" + shots
         return CodePrefix(self.Legacy, self.Mid, self.Mid2) + "R-" + str(self.Run) + "-" + ".".join(str(q) for q in RunQuotas) + "-" + "".join(self.Picks) + "-" + shots
@@ -1987,6 +2060,16 @@ def ParseRunCodeFull(code):
     if len(code) > MaxCodeLength:
         raise ValueError("Run code is too long")
     parts = code.strip().split("-")
+    if parts[0] == Version + "T":
+        if len(parts) != 3:
+            raise ValueError("Unknown run code version or wrong number of parts")
+        picks = list(parts[1])
+        if any(p not in RunPool and p != "0" for p in picks):
+            raise ValueError("Bad pick in run code")
+        chunks = ParseShotChunks(parts[2])
+        if not chunks or len(picks) != len(chunks) - 1 or len(chunks) > TourLength:
+            raise ValueError("Run code does not fit its run")
+        return 0, picks, chunks, False, False, False, False, True
     if parts[0] in (Version + "M", MidVersion + "M", Mid2Version + "M"):
         if len(parts) != 4:
             raise ValueError("Unknown run code version or wrong number of parts")
@@ -2001,7 +2084,7 @@ def ParseRunCodeFull(code):
         chunks = ParseShotChunks(parts[3])
         if not chunks or len(picks) != len(chunks) - 1:
             raise ValueError("Run code does not fit its run")
-        return run, picks, chunks, False, True, parts[0] == MidVersion + "M", parts[0] == Mid2Version + "M"
+        return run, picks, chunks, False, True, parts[0] == MidVersion + "M", parts[0] == Mid2Version + "M", False
     if parts and parts[0] in ("CH12R", "CH13R", "CH14R", "CH15R", "CH16R", "CH17R", "CH18R", "CH19R", "CH20R"):
         raise ValueError("Saved " + parts[0][:-1] + " run codes are no longer valid in " + Version + ". Start a new run.")
     if len(parts) != 5 or parts[0] not in (Version + "R", MidVersion + "R", Mid2Version + "R", LegacyVersion + "R"):
@@ -2036,13 +2119,13 @@ def ParseRunCodeFull(code):
         chunks.append(shots)
     if not 1 <= len(chunks) <= len(RunQuotas) or len(picks) != len(chunks) - 1:
         raise ValueError("Run code does not fit its run")
-    return run, picks, chunks, parts[0] == LegacyVersion + "R", False, parts[0] == MidVersion + "R", parts[0] == Mid2Version + "R"
+    return run, picks, chunks, parts[0] == LegacyVersion + "R", False, parts[0] == MidVersion + "R", parts[0] == Mid2Version + "R", False
 
 
 def ResumeRun(code):
-    run, picks, chunks, legacy, marathon, mid, mid2 = ParseRunCodeFull(code)
-    state = RunState(run, legacy, marathon, mid, mid2)
-    board = Attach(RunBoard(run, 1, state.Satchel, legacy, marathon, mid, mid2), state)
+    run, picks, chunks, legacy, marathon, mid, mid2, tour = ParseRunCodeFull(code)
+    state = RunState(run, legacy, marathon, mid, mid2, tour)
+    board = Attach(TourBoard(1, state.Satchel) if tour else RunBoard(run, 1, state.Satchel, legacy, marathon, mid, mid2), state)
     for index, shots in enumerate(chunks):
         for aim, kind in shots:
             if board.Over():
@@ -2056,7 +2139,7 @@ def ResumeRun(code):
             if picks[index] != "0":
                 state.Satchel[picks[index]] = state.Satchel.get(picks[index], 0) + 1
             state.K += 1
-            board = Attach(RunBoard(run, state.K, state.Satchel, legacy, marathon, mid, mid2), state)
+            board = Attach(TourBoard(state.K, state.Satchel) if tour else RunBoard(run, state.K, state.Satchel, legacy, marathon, mid, mid2), state)
     return state, board
 
 
@@ -2122,6 +2205,10 @@ def Run(args):
         state = RunState(args.marathon, marathon=True)
         board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy, True, state.Mid, state.Mid2), state)
         seed = board.Seed
+    elif args.tour:
+        state = RunState(0, tour=True)
+        board = Attach(TourBoard(1, state.Satchel), state)
+        seed = board.Seed
     elif args.code:
         board = Replay(args.code)
         seed = board.Seed
@@ -2140,8 +2227,8 @@ def Run(args):
                 picked = TitleScreen(screen, keys)
                 if picked is None:
                     return None
-                state = RunState(picked[0], marathon=picked[1])
-                board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy, state.Marathon, state.Mid, state.Mid2), state)
+                state = RunState(picked[0], marathon=picked[1], tour=len(picked) > 2 and picked[2])
+                board = Attach(TourBoard(1, state.Satchel) if state.Tour else RunBoard(state.Run, state.K, state.Satchel, state.Legacy, state.Marathon, state.Mid, state.Mid2), state)
                 seed = board.Seed
             while True:
                 screen.Show(screen.Frame(board, aim, preview, None, message, board.Over()))
@@ -2166,15 +2253,31 @@ def Run(args):
                     break
                 elif state is not None and key == "r":
                     OldRunCodes.append(state.Code(board))
-                    state = RunState(state.Run, state.Legacy, state.Marathon, state.Mid, state.Mid2)
-                    board = Attach(RunBoard(state.Run, 1, state.Satchel, state.Legacy, state.Marathon, state.Mid, state.Mid2), state)
+                    state = RunState(state.Run, state.Legacy, state.Marathon, state.Mid, state.Mid2, state.Tour)
+                    board = Attach(TourBoard(1, state.Satchel) if state.Tour else RunBoard(state.Run, 1, state.Satchel, state.Legacy, state.Marathon, state.Mid, state.Mid2), state)
                     seed = board.Seed
                     screen.Kind = "n"
-                    message = ("Marathon restarted from board 1, score and satchel reset. The old marathon code prints when you quit." if state.Marathon
+                    message = ("Tour restarted from board 1, score and satchel reset. The old tour code prints when you quit." if state.Tour else "Marathon restarted from board 1, score and satchel reset. The old marathon code prints when you quit." if state.Marathon
                                else "Run restarted from board 1, score and satchel reset. The old run code prints when you quit.")
                 elif state is not None and key == "n":
                     if not board.Over():
                         message = "Finish this board first"
+                    elif not board.Won() and state.Tour:
+                        state.Boards.append(board)
+                        cleared = len(state.Boards) - 1
+                        total = sum(b.Score for b in state.Boards)
+                        bestLines = TourBestLines(*RecordTourBest(cleared, total))
+                        rows = [" TOUR OVER   " + str(cleared) + (" board cleared" if cleared == 1 else " boards cleared") + " of " + str(TourLength), " Total score " + str(total)] \
+                            + bestLines + ["", " Tour code (replays this tour):"] + [" " + line for line in CodeLines(state.Code())] + ["",
+                                           " [any key] start the tour again    [Q] quit"]
+                        screen.Show([""] + screen.Panel(rows) + [""])
+                        if keys.Read() in ("q", "esc"):
+                            break
+                        state = RunState(0, tour=True)
+                        board = Attach(TourBoard(1, state.Satchel), state)
+                        seed = board.Seed
+                        screen.Kind = "n"
+                        message = "The tour begins again"
                     elif not board.Won() and state.Marathon:
                         state.Boards.append(board)
                         cleared = len(state.Boards) - 1
@@ -2197,7 +2300,20 @@ def Run(args):
                         seed = board.Seed
                         screen.Kind = "n"
                         message = "New run " + str(state.Run)
-                    elif not state.Marathon and state.K >= len(RunQuotas):
+                    elif state.Tour and state.K >= TourLength:
+                        state.Boards.append(board)
+                        total = sum(b.Score for b in state.Boards)
+                        bestLines = TourBestLines(*RecordTourBest(TourLength, total))
+                        rows = [" TOUR COMPLETE   all " + str(TourLength) + " boards cleared", " Total score " + str(total)] + bestLines + ["", " Tour code (replays this tour):"] + [" " + line for line in CodeLines(state.Code())] + ["", " [any key] start the tour again    [Q] quit"]
+                        screen.Show([""] + screen.Panel(rows) + [""])
+                        if keys.Read() in ("q", "esc"):
+                            break
+                        state = RunState(0, tour=True)
+                        board = Attach(TourBoard(1, state.Satchel), state)
+                        seed = board.Seed
+                        screen.Kind = "n"
+                        message = "The tour begins again"
+                    elif not state.Marathon and not state.Tour and state.K >= len(RunQuotas):
                         state.Boards.append(board)
                         total = sum(b.Score for b in state.Boards)
                         bestLines = BestLines(*RecordBest(total))
@@ -2220,10 +2336,10 @@ def Run(args):
                             if pick != "0":
                                 state.Satchel[pick] = state.Satchel.get(pick, 0) + 1
                             state.K += 1
-                            board = Attach(RunBoard(state.Run, state.K, state.Satchel, state.Legacy, state.Marathon, state.Mid, state.Mid2), state)
+                            board = Attach(TourBoard(state.K, state.Satchel) if state.Tour else RunBoard(state.Run, state.K, state.Satchel, state.Legacy, state.Marathon, state.Mid, state.Mid2), state)
                             seed = board.Seed
                             screen.Kind = "n"
-                            message = ("Marathon board " + str(state.K) + "   quota " + str(board.Quota) + " of " + str(board.Total) + ", " + str(board.Limit) + " shots" if state.Marathon
+                            message = ("Tour board " + str(state.K) + " of " + str(TourLength) + "   quota " + str(board.Quota) + " of " + str(board.Total) + ", " + str(board.Limit) + " shots" if state.Tour else "Marathon board " + str(state.K) + "   quota " + str(board.Quota) + " of " + str(board.Total) + ", " + str(board.Limit) + " shots" if state.Marathon
                                        else "Board " + str(state.K) + " of " + str(len(RunQuotas)))
                 elif key == "r":
                     board = Board(seed, board.Legacy, board.Mid)
@@ -2455,6 +2571,7 @@ def Main():
     parser.add_argument("--log", action="store_true")
     parser.add_argument("--run", type=int, default=None)
     parser.add_argument("--marathon", type=int, default=None)
+    parser.add_argument("--tour", action="store_true")
     parser.add_argument("--menu", action="store_true")
     parser.add_argument("--resume", type=str, default="")
     parser.add_argument("--reduced", action="store_true")

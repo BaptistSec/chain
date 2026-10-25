@@ -48,7 +48,7 @@ SERVER = W.make_server(0)
 threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 url = "http://127.0.0.1:" + str(SERVER.server_address[1]) + "/?k=" + W.TOKEN + "&selftest=1"
 proc = subprocess.Popen([CHROME, "--headless=new", "--disable-gpu", "--no-sandbox",
-                         "--window-size=1366,768", "--virtual-time-budget=45000", "--dump-dom", url],
+                         "--window-size=1366,768", "--virtual-time-budget=120000", "--dump-dom", url],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 deadline = time.time() + 90
 while time.time() < deadline:

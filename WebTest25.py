@@ -447,7 +447,7 @@ status, w = api("/api/watch?k=" + K, {"code": "CH24R-40001-9.10.10-00-4r.10/3r.3
 Check("watch starts on board 1", status == 200 and w["screen"] == "watch" and w["board"]["k"] == 1)
 status, r = api("/api/shot?k=" + K, {"aim": 5, "ball": "n"})
 Check("play inputs refused during watch", status == 400)
-wRun, _, _, wLeg, _, wMid, wMid2 = E.ParseRunCodeFull("CH24R-40001-9.10.10-00-4r.10/3r.33x/30x.11r")
+wRun, _, _, wLeg, _, wMid, wMid2, _ = E.ParseRunCodeFull("CH24R-40001-9.10.10-00-4r.10/3r.33x/30x.11r")
 eState = E.RunState(wRun, wLeg, False, wMid, wMid2)
 eBoard = E.Attach(E.RunBoard(wRun, 1, eState.Satchel, wLeg, False, wMid, wMid2), eState)
 expected = [("shot", 4, "r"), ("shot", 10, "n"), ("advance", 1, "0"),
@@ -574,7 +574,7 @@ Check("rejected watch leaves the session untouched",
 PICK_CODE = "CH24M-40003-s-38r.2/20"
 status, w = api("/api/watch?k=" + K, {"code": PICK_CODE})
 Check("pick-bearing marathon watch starts", status == 200 and w["board"]["marathon"] is True)
-mRun, _, _, mLeg, _, mMid, mMid2 = E.ParseRunCodeFull(PICK_CODE)
+mRun, _, _, mLeg, _, mMid, mMid2, _ = E.ParseRunCodeFull(PICK_CODE)
 eState = E.RunState(mRun, marathon=True, mid=mMid, mid2=mMid2)
 eBoard = E.Attach(E.RunBoard(mRun, 1, eState.Satchel, mLeg, True, mMid, mMid2), eState)
 hash_ok = True
@@ -604,7 +604,7 @@ Check("pick-bearing marathon hashes match the engine", hash_ok and sawAdvance)
 # a CH23M code spectates through the mid2 arm: shots hash-match the engine's own mid2 boards
 status, w = api("/api/watch?k=" + K, {"code": "CH23M-40003--38r.2"})
 Check("mid2 marathon watch starts", status == 200 and w["board"]["marathon"] is True)
-wRun, _, _, wLeg, _, wMid, wMid2 = E.ParseRunCodeFull("CH23M-40003--38r.2")
+wRun, _, _, wLeg, _, wMid, wMid2, _ = E.ParseRunCodeFull("CH23M-40003--38r.2")
 Check("mid2 code parses to the CH23 arm", not wLeg and not wMid and wMid2)
 eState = E.RunState(wRun, marathon=True, mid=wMid, mid2=wMid2)
 eBoard = E.Attach(E.RunBoard(wRun, 1, eState.Satchel, wLeg, True, wMid, wMid2), eState)
