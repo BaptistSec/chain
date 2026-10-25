@@ -21,7 +21,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 TMP = tempfile.mkdtemp(prefix="chainweb26-")
 os.environ["CHAIN_BEST_FILE"] = os.path.join(TMP, "best.txt")
 os.environ["CHAIN_MARATHON_FILE"] = os.path.join(TMP, "marathon.txt")
+os.environ["CHAIN_TOUR_FILE"] = os.path.join(TMP, "tour.txt")
+os.environ["CHAIN_LONG_TOUR_FILE"] = os.path.join(TMP, "longtour.txt")
 os.environ["CHAIN_SESSION_FILE"] = os.path.join(TMP, "session.json")
+# the long tour legs need the unlocked state: a completed tour record
+open(os.environ["CHAIN_TOUR_FILE"], "w").write("9,100")
 os.environ["CHAIN_SELFTEST"] = "1"
 
 import ChainWeb as W

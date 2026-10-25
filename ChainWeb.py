@@ -95,6 +95,7 @@ def BoardJson(board, state=None):
         "k": state.K if state else None,
         "marathon": bool(state and state.Marathon),
         "tour": bool(state and state.Tour),
+        "long": bool(state and state.Long),
         "code": state.Code(board) if state else None,
         "style": board.Style,
     }
@@ -173,8 +174,11 @@ class Session:
         best, _ = E.ReadBest(E.BestPath())
         mBoards, mTotal, _ = E.ReadMarathonBest(E.MarathonBestPath())
         tBoards, tTotal, _ = E.ReadMarathonBest(E.TourBestPath())
+        lBoards, lTotal, _ = E.ReadMarathonBest(E.LongTourBestPath())
         return {"bestRun": best, "bestMarathonBoards": mBoards, "bestMarathonScore": mTotal,
-                "bestTourBoards": tBoards, "bestTourScore": tTotal}
+                "bestTourBoards": tBoards, "bestTourScore": tTotal,
+                "bestLongTourBoards": lBoards, "bestLongTourScore": lTotal,
+                "longLocked": not E.LongUnlocked()}
 
     def StateJson(self):
         data = {"screen": self.screen, "message": self.message, "gen": self.gen}
@@ -198,12 +202,14 @@ class Session:
 
     def Start(self, mode):
         with self.lock:
-            if mode not in ("run", "marathon", "daily", "tour"):
+            if mode not in ("run", "marathon", "daily", "tour", "long"):
                 return None, "unknown mode"
+            if mode == "long" and not E.LongUnlocked():
+                return None, "the long tour unlocks after you clear the tour"
             marathon = mode == "marathon"
-            run = 0 if mode == "tour" else (E.DailyRun() if mode == "daily" else E.random.SystemRandom().randint(1, E.MaxRunNumber))
-            self.state = E.RunState(run, marathon=marathon, tour=mode == "tour")
-            self.board = E.Attach(E.TourBoard(1, self.state.Satchel) if self.state.Tour else E.RunBoard(run, 1, self.state.Satchel, False, marathon, False), self.state)
+            run = 0 if mode in ("tour", "long") else (E.DailyRun() if mode == "daily" else E.random.SystemRandom().randint(1, E.MaxRunNumber))
+            self.state = E.RunState(run, marathon=marathon, tour=mode == "tour", long=mode == "long")
+            self.board = E.Attach(E.LongBoard(1, self.state.Satchel) if self.state.Long else (E.TourBoard(1, self.state.Satchel) if self.state.Tour else E.RunBoard(run, 1, self.state.Satchel, False, marathon, False)), self.state)
             self.screen = "play"
             self.result = None
             self.busy = False
@@ -212,7 +218,7 @@ class Session:
             self.watch = None
             self._save_codes()
             self.gen += 1
-            self.message = ("Tour board 1 of " + str(E.TourLength) + "   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if self.state.Tour else "Marathon board 1   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if marathon
+            self.message = ("Long tour board 1 of " + str(E.LongLength) + "   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if self.state.Long else "Tour board 1 of " + str(E.TourLength) + "   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if self.state.Tour else "Marathon board 1   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if marathon
                             else "Board 1 of " + str(len(E.RunQuotas)))
             return self.StateJson(), None
 
@@ -279,13 +285,13 @@ class Session:
             text = code.strip()
             try:
                 E.ResumeRun(text)
-                run, picks, chunks, legacy, marathon, mid, mid2, tour = E.ParseRunCodeFull(text)
+                run, picks, chunks, legacy, marathon, mid, mid2, tour, long = E.ParseRunCodeFull(text)
             except (ValueError, KeyError, IndexError) as exc:
                 return None, "That run code did not load: " + str(exc)
-            state = E.RunState(run, legacy, marathon, mid, mid2, tour)
-            board = E.Attach(E.TourBoard(1, state.Satchel) if tour else E.RunBoard(run, 1, state.Satchel, legacy, marathon, mid, mid2), state)
+            state = E.RunState(run, legacy, marathon, mid, mid2, tour, long)
+            board = E.Attach(E.LongBoard(1, state.Satchel) if long else (E.TourBoard(1, state.Satchel) if tour else E.RunBoard(run, 1, state.Satchel, legacy, marathon, mid, mid2)), state)
             self.watch = {"state": state, "board": board, "picks": picks, "chunks": chunks,
-                          "legacy": legacy, "marathon": marathon, "mid": mid, "mid2": mid2, "tour": tour,
+                          "legacy": legacy, "marathon": marathon, "mid": mid, "mid2": mid2, "tour": tour, "long": long,
                           "ci": 0, "si": 0, "done": False}
             self.state = None
             self.board = None
@@ -293,7 +299,7 @@ class Session:
             self.result = None
             self.busy = False
             self.gen += 1
-            self.message = "Watching " + ("marathon " if marathon else "run ") + str(run)
+            self.message = "Watching " + ("the long tour" if long else "the tour" if tour else "marathon " + str(run) if marathon else "run " + str(run))
             data = self.StateJson()
             data["board"] = BoardJson(board, state)
             return data, None
@@ -319,7 +325,7 @@ class Session:
                         state.Satchel[pick] = state.Satchel.get(pick, 0) + 1
                     cleared, score = state.K, board.Score
                     state.K += 1
-                    w["board"] = E.Attach(E.TourBoard(state.K, state.Satchel) if w["tour"] else E.RunBoard(state.Run, state.K, state.Satchel, w["legacy"], w["marathon"], w["mid"], w["mid2"]), state)
+                    w["board"] = E.Attach(E.LongBoard(state.K, state.Satchel) if w["long"] else (E.TourBoard(state.K, state.Satchel) if w["tour"] else E.RunBoard(state.Run, state.K, state.Satchel, w["legacy"], w["marathon"], w["mid"], w["mid2"])), state)
                     w["ci"] += 1
                     w["si"] = 0
                     data = self.StateJson()
@@ -329,7 +335,7 @@ class Session:
                 if board.Won():
                     state.Boards.append(board)
                 w["done"] = True
-                open_ = board.Won() and (w["marathon"] or (state.Tour and state.K < E.TourLength) or (not state.Tour and state.K < len(E.RunQuotas)))
+                open_ = board.Won() and (w["marathon"] or (w["long"] and state.K < E.LongLength) or (state.Tour and state.K < E.TourLength) or (not state.Tour and not w["long"] and state.K < len(E.RunQuotas)))
                 self.message = ("Watch finished - the run continues from the code" if open_
                                 else "Watch finished - run complete, all " + str(len(state.Boards)) + " boards cleared" if board.Won()
                                 else "Watch finished - marathon over, " + str(len(state.Boards)) + " boards cleared" if w["marathon"]
@@ -386,9 +392,17 @@ class Session:
         if state is None:
             return
         if board.Won():
-            if state.Marathon or (state.Tour and state.K < E.TourLength) or (not state.Tour and state.K < len(E.RunQuotas)):
+            if state.Marathon or (state.Tour and state.K < E.TourLength) or (state.Long and state.K < E.LongLength) or (not state.Tour and not state.Long and state.K < len(E.RunQuotas)):
                 self.offer = E.RunOffer(state.Run, state.K)
                 self.screen = "draft"
+            elif state.Long:
+                state.Boards.append(board)
+                total = sum(b.Score for b in state.Boards)
+                best, isNew, saved = E.RecordLongTourBest(E.LongLength, total)
+                self.result = {"kind": "tourcomplete", "long": True, "boards": len(state.Boards), "total": total,
+                               "bestBoards": best[0], "bestScore": best[1], "isNew": isNew, "saved": saved,
+                               "code": state.Code()}
+                self.screen = "complete"
             elif state.Tour:
                 state.Boards.append(board)
                 total = sum(b.Score for b in state.Boards)
@@ -405,6 +419,15 @@ class Session:
                                "best": best, "isNew": isNew, "saved": saved,
                                "code": state.Code(), "next": E.NextRunNumber(state.Run)}
                 self.screen = "complete"
+        elif state.Long:
+            state.Boards.append(board)
+            cleared = len(state.Boards) - 1
+            total = sum(b.Score for b in state.Boards)
+            best, isNew, saved = E.RecordLongTourBest(cleared, total)
+            self.result = {"kind": "tourover", "long": True, "cleared": cleared, "total": total,
+                           "bestBoards": best[0], "bestScore": best[1], "isNew": isNew, "saved": saved,
+                           "code": state.Code()}
+            self.screen = "gameover"
         elif state.Tour:
             state.Boards.append(board)
             cleared = len(state.Boards) - 1
@@ -444,11 +467,11 @@ class Session:
             if pick != "0":
                 state.Satchel[pick] = state.Satchel.get(pick, 0) + 1
             state.K += 1
-            self.board = E.Attach(E.TourBoard(state.K, state.Satchel) if state.Tour else E.RunBoard(state.Run, state.K, state.Satchel, state.Legacy, state.Marathon, state.Mid, state.Mid2), state)
+            self.board = E.Attach(E.LongBoard(state.K, state.Satchel) if state.Long else (E.TourBoard(state.K, state.Satchel) if state.Tour else E.RunBoard(state.Run, state.K, state.Satchel, state.Legacy, state.Marathon, state.Mid, state.Mid2)), state)
             self.offer = None
             self.screen = "play"
             self.gen += 1
-            self.message = ("Tour board " + str(state.K) + " of " + str(E.TourLength) + "   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if state.Tour else "Marathon board " + str(state.K) + "   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if state.Marathon
+            self.message = ("Long tour board " + str(state.K) + " of " + str(E.LongLength) + "   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if state.Long else "Tour board " + str(state.K) + " of " + str(E.TourLength) + "   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if state.Tour else "Marathon board " + str(state.K) + "   quota " + str(self.board.Quota) + " of " + str(self.board.Total) + ", " + str(self.board.Limit) + " shots" if state.Marathon
                             else "Board " + str(state.K) + " of " + str(len(E.RunQuotas)))
             return self.StateJson(), None
 
@@ -459,9 +482,9 @@ class Session:
                 return None, "nothing to advance to"
             state = self.state
             if self.result["kind"] in ("tourover", "tourcomplete"):
-                self.state = E.RunState(0, tour=True)
-                self.board = E.Attach(E.TourBoard(1, self.state.Satchel), self.state)
-                self.message = "The tour begins again"
+                self.state = E.RunState(0, tour=True, long=bool(self.result.get("long")))
+                self.board = E.Attach(E.LongBoard(1, self.state.Satchel) if self.state.Long else E.TourBoard(1, self.state.Satchel), self.state)
+                self.message = "The long tour begins again" if self.state.Long else "The tour begins again"
             elif self.result["kind"] == "marathonover":
                 self.state = E.RunState(E.NextRunNumber(state.Run), marathon=True)
                 self.board = E.Attach(E.RunBoard(self.state.Run, 1, self.state.Satchel, False, True), self.state)
@@ -483,13 +506,13 @@ class Session:
             s = self.state
             self.old_codes = (self.old_codes + [old])[-5:]
             self._save_codes()
-            self.state = E.RunState(s.Run, s.Legacy, s.Marathon, s.Mid, s.Mid2, s.Tour)
-            self.board = E.Attach(E.TourBoard(1, self.state.Satchel) if s.Tour else E.RunBoard(s.Run, 1, self.state.Satchel, s.Legacy, s.Marathon, s.Mid, s.Mid2), self.state)
+            self.state = E.RunState(s.Run, s.Legacy, s.Marathon, s.Mid, s.Mid2, s.Tour, s.Long)
+            self.board = E.Attach(E.LongBoard(1, self.state.Satchel) if s.Long else (E.TourBoard(1, self.state.Satchel) if s.Tour else E.RunBoard(s.Run, 1, self.state.Satchel, s.Legacy, s.Marathon, s.Mid, s.Mid2)), self.state)
             self.screen = "play"
             self.result = None
             self.busy = False
             self.gen += 1
-            self.message = ("Tour restarted from board 1, score and satchel reset. The old tour code shows on the menu." if s.Tour else "Marathon restarted from board 1, score and satchel reset. The old marathon code shows on the menu." if s.Marathon
+            self.message = ("Long tour restarted from board 1, score and satchel reset. The old long tour code shows on the menu." if s.Long else "Tour restarted from board 1, score and satchel reset. The old tour code shows on the menu." if s.Tour else "Marathon restarted from board 1, score and satchel reset. The old marathon code shows on the menu." if s.Marathon
                             else "Run restarted from board 1, score and satchel reset. The old run code shows on the menu.")
             data = self.StateJson()
             data["oldCode"] = old
@@ -547,6 +570,8 @@ PAGE = r"""<!DOCTYPE html>
   .menu button:hover, .menu button.hot { background: var(--panel2); border-color: var(--accent); }
   .menu .k { color: var(--accent); font-weight: bold; margin-right: 10px; }
   #records { margin-top: 26px; color: var(--gold); }
+  .lock { color: var(--dim); font-size: 11px; }
+  button.locked { opacity: .55; }
   #quitcode { margin-top: 14px; color: var(--dim); font-family: Consolas, monospace; font-size: 12px; word-break: break-all; }
   #oldcodes { margin-top: 6px; color: var(--dim); font-family: Consolas, monospace; font-size: 12px; word-break: break-all; }
   #resumeRow { margin-top: 22px; }
@@ -657,6 +682,7 @@ PAGE = r"""<!DOCTYPE html>
       <button data-act="run"><span class="k">Enter</span>Start a run</button>
       <button data-act="marathon"><span class="k">M</span>Marathon</button>
       <button data-act="tour"><span class="k">T</span>The tour</button>
+      <button data-act="long"><span class="k">L</span>The long tour <span id="longLock" class="lock"></span></button>
       <button data-act="daily"><span class="k">D</span>Daily run <span id="daily"></span></button>
       <button data-act="help"><span class="k">H</span>How to play</button>
     </div>
@@ -1006,7 +1032,8 @@ function renderHud() {
   var b = S.board;
   if (!b) return;
   var arrivedNow = justArrived; justArrived = false;
-  var who = b.tour ? ("the tour · board <b>" + b.k + "</b> of <b>9</b>")
+  var who = b.long ? ("the long tour · board <b>" + b.k + "</b> of <b>9</b>")
+                   : b.tour ? ("the tour · board <b>" + b.k + "</b> of <b>9</b>")
                    : b.marathon ? ("marathon <b>" + b.run + "</b> · board <b>" + b.k + "</b>")
                        : ("run <b>" + b.run + "</b> · board <b>" + b.k + "</b> of <b>3</b>");
   document.getElementById("who").innerHTML = "CHAIN &nbsp;" + who + (b.style ? ' <span style="color:var(--dim)">(' + b.style + ")</span>" : "");
@@ -1257,9 +1284,13 @@ function applyState(st) {
     if (r.bestRun) parts.push("best run " + r.bestRun);
     if (r.bestMarathonBoards) parts.push("best marathon " + r.bestMarathonBoards + " boards, " + r.bestMarathonScore);
     if (r.bestTourBoards) parts.push("best tour " + r.bestTourBoards + " boards, " + r.bestTourScore);
+    if (r.bestLongTourBoards) parts.push("best long tour " + r.bestLongTourBoards + " boards, " + r.bestLongTourScore);
     document.getElementById("records").textContent = parts.length
         ? "Records: " + parts.join("  ·  ")
         : "No records yet - finish a run, a marathon or the tour and they show here.";
+    var lb = document.querySelector('#menu [data-act="long"]');
+    document.getElementById("longLock").textContent = r.longLocked ? "(clear the tour to unlock)" : "";
+    if (lb) lb.classList.toggle("locked", !!r.longLocked);
     document.getElementById("daily").textContent = "(" + st.daily + ")";
     var qc = st.quitCode || st.lastCode || "";
     document.getElementById("quitcode").textContent = qc ? "Run code (replays this run): " + qc : "";
@@ -1307,14 +1338,14 @@ function renderResult(st) {
            '<p class="code">run code: ' + r.code + '</p><div class="row"><button data-go="advance"><span class="k">Enter</span>run ' + r.next +
            '</button><button data-go="menu"><span class="k">Q</span>menu</button><button data-snd="1"><span class="k">[S]</span> <span class="sl">' + sndLabel() + "</span></button></div></div>";
   } else if (r.kind === "tourcomplete") {
-    html = '<div class="sheet"><h2 class="gold">TOUR COMPLETE</h2><p>all 9 boards cleared</p><p class="big">' + r.total + "</p>" +
-           (r.isNew ? '<p style="color:var(--good)">new tour best</p>' : "<p style='color:var(--dim)'>best " + r.bestBoards + " boards, " + r.bestScore + "</p>") +
-           '<p class="code">tour code: ' + r.code + '</p><div class="row"><button data-go="advance"><span class="k">Enter</span>tour again' +
+    html = '<div class="sheet"><h2 class="gold">' + (r.long ? "LONG TOUR COMPLETE" : "TOUR COMPLETE") + '</h2><p>all 9 boards cleared</p><p class="big">' + r.total + "</p>" +
+           (r.isNew ? '<p style="color:var(--good)">new ' + (r.long ? "long tour" : "tour") + ' best</p>' : "<p style='color:var(--dim)'>best " + r.bestBoards + " boards, " + r.bestScore + "</p>") +
+           '<p class="code">' + (r.long ? "long tour" : "tour") + ' code: ' + r.code + '</p><div class="row"><button data-go="advance"><span class="k">Enter</span>' + (r.long ? "long tour again" : "tour again") +
            '</button><button data-go="menu"><span class="k">Q</span>menu</button><button data-snd="1"><span class="k">[S]</span> <span class="sl">' + sndLabel() + "</span></button></div></div>";
   } else if (r.kind === "tourover") {
-    html = '<div class="sheet"><h2>TOUR OVER</h2><p>' + r.cleared + (r.cleared === 1 ? " board" : " boards") + ' cleared of 9</p><p class="big">' + r.total + "</p>" +
-           (r.isNew ? '<p style="color:var(--good)">new tour best</p>' : "<p style='color:var(--dim)'>best " + r.bestBoards + " boards, " + r.bestScore + "</p>") +
-           '<p class="code">tour code: ' + r.code + '</p><div class="row"><button data-go="advance"><span class="k">Enter</span>tour again' +
+    html = '<div class="sheet"><h2>' + (r.long ? "LONG TOUR OVER" : "TOUR OVER") + '</h2><p>' + r.cleared + (r.cleared === 1 ? " board" : " boards") + ' cleared of 9</p><p class="big">' + r.total + "</p>" +
+           (r.isNew ? '<p style="color:var(--good)">new ' + (r.long ? "long tour" : "tour") + ' best</p>' : "<p style='color:var(--dim)'>best " + r.bestBoards + " boards, " + r.bestScore + "</p>") +
+           '<p class="code">' + (r.long ? "long tour" : "tour") + ' code: ' + r.code + '</p><div class="row"><button data-go="advance"><span class="k">Enter</span>' + (r.long ? "long tour again" : "tour again") +
            '</button><button data-go="menu"><span class="k">Q</span>menu</button><button data-snd="1"><span class="k">[S]</span> <span class="sl">' + sndLabel() + "</span></button></div></div>";
   } else if (r.kind === "marathonover") {
     html = '<div class="sheet"><h2>MARATHON OVER</h2><p>' + r.cleared + (r.cleared === 1 ? " board" : " boards") + ' cleared</p><p class="big">' + r.total + "</p>" +
@@ -1391,6 +1422,8 @@ function helpHtml() {
     "The gold line on the floor is the dock. It sweeps side to side. Land the charge in it for a free shot and +400 - only the first 2 catches on each board pay.<br>" +
     "Marathon: boards keep coming with rising quotas and, deeper in, fewer shots. The first board you fail ends the marathon.<br>" +
     "The tour: nine fixed boards in a set order, harder as you go. The first board you fail ends the tour; clear all nine to complete it.</p>" +
+    "<h3>The long tour</h3><p>" +
+    "Clearing the tour unlocks the long tour: nine harsher boards with tighter shot limits. Same rules, same code replay - the long tour code starts with CH25L-.</p>" +
     "<h3>Board pieces</h3><p class='legend'>" +
     '<span style="color:#37c8e8">&#9679;</span> loose &nbsp;<span style="color:#c86ff0">&#9670;</span> loose &nbsp;' +
     '<span style="color:#ffd24a">&#9632;</span> target &nbsp;<span style="color:#ff5fd0">&#9733;</span> jackpot &nbsp;' +
@@ -1417,6 +1450,7 @@ document.addEventListener("keydown", function(ev) {
     if (k === "Enter") start("run");
     else if (k === "m" || k === "M") start("marathon");
     else if (k === "t" || k === "T") start("tour");
+    else if (k === "l" || k === "L") start("long");
     else if (k === "d" || k === "D") start("daily");
     else if (k === "h" || k === "H") showHelp();
     return;
@@ -2120,6 +2154,53 @@ function selftest() {
       try { applyState(fake); dimKind = dimFx ? 1 : 0; } catch (e) { dimKind = -1; }
     })();
     t("tour over dims the board (parity with runover)", dimKind === 1);
+    // the long tour: unlocked here (a 9-board tour record exists in this harness)
+    if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
+    t("menu long button carries no lock suffix", document.getElementById("longLock").textContent === "");
+    key("l");
+    ok = await until(function() { return S.screen === "play" && S.board; }, 5000);
+    t("L starts the long tour", !!ok);
+    t("long tour is the curated board 1 as run 0", !!S.board && S.board.seed === 31024 && S.board.run === 0 && S.board.quota === 11 && S.board.limit === 8 && S.board.style.indexOf("chevrons") === 0);
+    t("long tour shows the CH25L code", !!S.board && S.board.code === "CH25L--");
+    t("long tour hud counts nine boards", document.getElementById("who").textContent.indexOf("long tour") >= 0 && document.getElementById("who").textContent.indexOf("board 1 of 9") >= 0);
+    S.fast = true; S.aim = 11; key(" ");
+    ok = await until(function() { return !S.playing; }, 20000);
+    t("long tour shot plays", !!ok && S.board.shots === 1);
+    key("q");
+    ok = await until(function() { return S.screen === "title"; }, 5000);
+    var lcode = (document.getElementById("quitcode").textContent.match(/CH25L-[^ ]*/) || [""])[0];
+    t("long tour quit prints the CH25L code", lcode.indexOf("CH25L-") === 0 && lcode.length > 7);
+    if (lcode) {
+      document.getElementById("resumeCode").value = lcode;
+      document.getElementById("resumeBtn").click();
+      ok = await until(function() { return S.screen === "play" && S.board && S.board.shots === 1; }, 5000);
+      t("long tour code resumes to the same board", !!ok && S.board.seed === 31024 && S.board.quota === 11);
+      key("q");
+      await new Promise(function(r) { setTimeout(r, 600); });
+    }
+    // long result sheets render (mutant pins for the two new branches)
+    var rOv3 = document.getElementById("result");
+    rOv3.classList.remove("hidden");
+    renderResult({result:{kind:"tourover", long:true, cleared:5, total:4321, bestBoards:9, bestScore:9000, isNew:false, saved:true, code:"CH25L-xs-28.2"}});
+    t("long tour over sheet renders", rOv3.textContent.indexOf("LONG TOUR OVER") >= 0 && rOv3.textContent.indexOf("5 boards cleared of 9") >= 0 && rOv3.textContent.indexOf("CH25L-xs-28.2") >= 0);
+    renderResult({result:{kind:"tourcomplete", long:true, boards:9, total:9876, bestBoards:9, bestScore:9876, isNew:true, saved:true, code:"CH25L-xsrxsrxs-1/2"}});
+    t("long tour complete sheet renders", rOv3.textContent.indexOf("LONG TOUR COMPLETE") >= 0 && rOv3.textContent.indexOf("all 9 boards cleared") >= 0 && rOv3.textContent.indexOf("new long tour best") >= 0);
+    rOv3.classList.add("hidden");
+    // long tour menu button and help line
+    document.querySelector('#menu [data-act="long"]').click();
+    ok = await until(function() { return S.screen === "play" && S.board && S.board.seed === 31024; }, 5000);
+    t("long tour menu button starts the long tour", !!ok && S.board.run === 0 && S.board.quota === 11);
+    key("q");
+    ok = await until(function() { return S.screen === "title"; }, 5000);
+    key("h");
+    t("help names the long tour", document.getElementById("helpBody").textContent.indexOf("long tour") >= 0);
+    key("Escape");
+    // locked rendering: the suffix and locked class come from records.longLocked
+    (function() {
+      var fake = {screen: "title", message: "", gen: S.gen, records: {longLocked: true}, daily: "", oldCodes: [], lastCode: ""};
+      try { applyState(fake); } catch (e) {}
+    })();
+    t("locked long button shows the unlock suffix", document.getElementById("longLock").textContent.indexOf("clear the tour to unlock") >= 0);
     if (S.screen !== "title") { go("menu"); ok = await until(function() { return S.screen === "title"; }, 5000); }
     out.push("checks " + out.length + " complete");
     var fails = out.filter(function(l) { return l.indexOf("FAIL") === 0; }).length;

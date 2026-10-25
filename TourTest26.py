@@ -31,6 +31,7 @@ TMP = tempfile.mkdtemp(prefix="chaintour-")
 os.environ["CHAIN_BEST_FILE"] = os.path.join(TMP, "best.txt")
 os.environ["CHAIN_MARATHON_FILE"] = os.path.join(TMP, "marathon.txt")
 os.environ["CHAIN_TOUR_FILE"] = os.path.join(TMP, "tour.txt")
+os.environ["CHAIN_LONG_TOUR_FILE"] = os.path.join(TMP, "longtour.txt")
 os.environ["CHAIN_SESSION_FILE"] = os.path.join(TMP, "session.json")
 
 import random
@@ -72,7 +73,7 @@ st0 = E.RunState(0, tour=True)
 b0 = E.Attach(E.TourBoard(1, st0.Satchel), st0)
 Check("empty tour code", st0.Code(b0) == "CH25T--")
 r0 = E.ParseRunCodeFull("CH25T--")
-Check("tour code parses to the tour arm", r0 == (0, [], [[]], False, False, False, False, True))
+Check("tour code parses to the tour arm", r0 == (0, [], [[]], False, False, False, False, True, False))
 Check("run arm reports no tour", E.ParseRunCodeFull("CH24R-40001-9.10.10--4.3.15")[7] is False)
 Check("marathon arm reports no tour", E.ParseRunCodeFull("CH23M-40003--38r.2")[7] is False)
 
@@ -568,6 +569,7 @@ Check("terminal tour complete panel fits the box", max(len(l) for l in PanelBloc
 Check("terminal completion code matches engine", PanelCode(txt, "Tour code") == doneCode)
 saved = open(os.environ["CHAIN_TOUR_FILE"]).read().strip()
 Check("terminal completion record holds 9,total", saved == "9," + str(sum(b.Score for b in tSt.Boards)))
+Check("terminal tour completion does not touch the long record", not os.path.exists(os.environ["CHAIN_LONG_TOUR_FILE"]))
 
 if Fails:
     print("FAILS", len(Fails))
