@@ -81,17 +81,19 @@ Check("locked again without the record", not E.LongUnlocked())
 
 # --- 3. CH25L codes ----------------------------------------------------------
 st0 = E.RunState(0, long=True)
-b0 = E.Attach(E.LongBoard(1, st0.Satchel), st0)
-Check("empty long tour code", st0.Code(b0) == "CH25L--")
+b0 = E.Attach(E.LongBoard(1, st0.Satchel, pool=st0.Pool), st0)
+Check("empty long tour code", st0.Code(b0) == E.Version + "L--")
+fst0, fb0 = E.ResumeRun("CH25L--")
+Check("frozen CH25L empty code resumes and re-emits its prefix", fst0.Long and fst0.Pool == E.RunPool and fst0.Code(fb0) == "CH25L--")
 r0 = E.ParseRunCodeFull("CH25L--")
-Check("long code parses to the long arm", r0 == (0, [], [[]], False, False, False, False, False, True))
+Check("long code parses to the long arm", r0 == (0, [], [[]], False, False, False, False, False, True, "CH25L"))
 Check("tour arm reports no long", E.ParseRunCodeFull("CH25T--")[8] is False and E.ParseRunCodeFull("CH25T--")[7] is True)
 Check("run arm reports no long", E.ParseRunCodeFull("CH24R-40001-9.10.10--4.3.15")[8] is False)
 Check("marathon arm reports no long", E.ParseRunCodeFull("CH23M-40003--38r.2")[8] is False)
 
 def PlayLongBoards(rngSeed, count):
     st = E.RunState(0, long=True)
-    b = E.Attach(E.LongBoard(1, st.Satchel), st)
+    b = E.Attach(E.LongBoard(1, st.Satchel, pool=st.Pool), st)
     rng = random.Random(rngSeed)
     while True:
         while not b.Over():
@@ -101,18 +103,23 @@ def PlayLongBoards(rngSeed, count):
         if not b.Won() or len(st.Boards) + 1 >= count:
             return st, b
         st.Boards.append(b)
-        offer = E.RunOffer(st.Run, st.K)
+        offer = E.RunOffer(st.Run, st.K, st.Pool)
         pick = offer[0] if offer else "0"
         st.Picks.append(pick)
         if pick != "0":
             st.Satchel[pick] = st.Satchel.get(pick, 0) + 1
         st.K += 1
-        b = E.Attach(E.LongBoard(st.K, st.Satchel), st)
+        b = E.Attach(E.LongBoard(st.K, st.Satchel, pool=st.Pool), st)
 
 # scripted loss fixture: seed 96005 falls on board 5
 fSt, fB = PlayLongBoards(96005, 9)
 midCode = fSt.Code(fB)
-Check("scripted long tour fell mid-ladder", not fB.Won() and fSt.K == 5 and midCode.startswith("CH25L-"))
+Check("scripted long tour fell mid-ladder", not fB.Won() and fSt.K == 5 and midCode.startswith(E.Version + "L-"))
+frozenCode = "CH25L-xsrx-5.27.32x.28.17.11r.0/26.3x.34x.4.3.29r.0/1x.29x.5r.1s.18.9.20/5x.28x.38r.3r.1r.36s.15/21x.23x.14x.16r.24r.2r.18s.23.10.13.37"
+fstL, fbL = E.ResumeRun(frozenCode)
+Check("frozen CH25L scripted code resumes identically", fstL.Long and fstL.K == 5 and fstL.Pool == E.RunPool
+      and fbL.Hash() == "6b7e64e4" and fbL.Score == 4665 and fstL.Satchel == {"r": 2, "x": 3, "s": 1}
+      and fstL.Picks == ["x", "s", "r", "x"] and fstL.Code(fbL) == frozenCode)
 stR, bR = E.ResumeRun(midCode)
 Check("long code resumes to the same board", stR.Long and not stR.Tour and stR.K == 5 and bR.Hash() == fB.Hash()
       and bR.Score == fB.Score and stR.Satchel == fSt.Satchel and stR.Picks == fSt.Picks)
@@ -121,12 +128,18 @@ Check("resumed long board is the curated board 5", bR.Seed == E.LongSeeds[4] and
 Check("resumed long run replays its boards", len(stR.Boards) == 4
       and all(stR.Boards[i].Hash() == fSt.Boards[i].Hash() for i in range(4)))
 # a mid-board code with no pick yet is legitimate (quit codes end open mid-board)
-wst, wb = E.ResumeRun("CH25L--1")
+wst, wb = E.ResumeRun(E.Version + "L--1")
 rst = E.RunState(0, long=True)
-ref = E.Attach(E.LongBoard(1, rst.Satchel), rst)
+ref = E.Attach(E.LongBoard(1, rst.Satchel, pool=rst.Pool), rst)
 ref.Play(1, None, "n")
 Check("mid-board long code resumes to play", wst.Long and not wb.Won() and not wb.Over() and wst.K == 1
       and wb.Score == ref.Score and wb.Hash() == ref.Hash())
+fst2, fb2 = E.ResumeRun("CH25L--1")
+frst = E.RunState(0, long=True, pool=E.RunPool)
+fref = E.Attach(E.LongBoard(1, frst.Satchel, pool=E.RunPool), frst)
+fref.Play(1, None, "n")
+Check("frozen CH25L mid-board code resumes to play with pool-3", fst2.Long and fst2.Pool == E.RunPool and not fb2.Won()
+      and not fb2.Over() and fst2.K == 1 and fb2.Score == fref.Score and fb2.Hash() == fref.Hash())
 for bad in ("CH25L-x-", "CH25L-xs-", "CH24L--", "CH25L--1/2/3/4/5/6/7/8/9/10",
             "CH25L-xsrxsrxsx-", "CH25M-0--"):
     try:
@@ -176,7 +189,7 @@ lSt, lB = PlayLongBoards(96005, 9)
 lostTxt = chr(10).join(scr.Frame(lB, 0, False, None, "", True))
 Check("lost long board offers end the long tour",
       not lB.Won() and "end the long tour" in lostTxt and "restart the long tour" in lostTxt and "new run" not in lostTxt)
-wSt, wB = PlayLongBoards(96048, 9)
+wSt, wB = PlayLongBoards(96049, 9)
 lastTxt = chr(10).join(scr.Frame(wB, 0, False, None, "", True))
 Check("final long board offers finish the long tour", wSt.K == 9 and wB.Won() and "finish the long tour" in lastTxt)
 
@@ -219,7 +232,7 @@ trials = 150
 for trial in range(trials):
     trng = random.Random(93000 + trial)
     stS = E.RunState(0, long=True)
-    bS = E.Attach(E.LongBoard(1, stS.Satchel), stS)
+    bS = E.Attach(E.LongBoard(1, stS.Satchel, pool=stS.Pool), stS)
     while True:
         while not bS.Over():
             left = bS.Limit + bS.Extra - len(bS.Log)
@@ -232,12 +245,12 @@ for trial in range(trials):
         if stS.K >= E.LongLength:
             complete += 1
             break
-        offer = E.RunOffer(stS.Run, stS.K)
+        offer = E.RunOffer(stS.Run, stS.K, stS.Pool)
         pick = offer[0] if offer else "0"
         stS.Picks.append(pick)
         stS.Satchel[pick] = stS.Satchel.get(pick, 0) + 1
         stS.K += 1
-        bS = E.Attach(E.LongBoard(stS.K, stS.Satchel), stS)
+        bS = E.Attach(E.LongBoard(stS.K, stS.Satchel, pool=stS.Pool), stS)
 rate = complete / trials
 print("   full long tour bot completion", str(round(100 * rate, 1)) + "% over", trials, "trials; failures by board:", dict(sorted(failAt.items())))
 Check("long tour is completable but rare (bot completes 1.5-12%)", 0.015 <= rate <= 0.12)
@@ -289,14 +302,14 @@ Check("web records unlock after the tour record", status == 200 and st["records"
 
 status, st = api("/api/start?k=" + K, {"mode": "long"})
 engSt = E.RunState(0, long=True)
-engB = E.Attach(E.LongBoard(1, engSt.Satchel), engSt)
+engB = E.Attach(E.LongBoard(1, engSt.Satchel, pool=engSt.Pool), engSt)
 Check("web long starts on curated board 1", status == 200 and st["screen"] == "play" and st["board"]["k"] == 1
       and st["board"]["style"].startswith("chevrons"))
 Check("web long runs as run 0 (fixed ladder)", st["board"]["run"] == 0)
 Check("web long board hash matches engine", st["board"]["hash"] == engB.Hash())
 Check("web long pressure from the curve", st["board"]["quota"] == 11 and st["board"]["limit"] == 8)
 Check("web board json flags the long tour", st["board"].get("long") is True and st["board"].get("tour") is False)
-Check("web long board code is CH25L", st["board"]["code"] == "CH25L--")
+Check("web long board code is the current prefix", st["board"]["code"] == E.Version + "L--")
 
 # lose board 1 through the API: LONG TOUR OVER, record written, code issued
 for i in range(16):
@@ -306,7 +319,7 @@ for i in range(16):
     st = api("/api/done?k=" + K, {"gen": rS["gen"], "shotId": rS["shotId"]})[1]
 Check("web long loss reaches gameover", st["screen"] == "gameover" and st["result"]["kind"] == "tourover")
 Check("web long over flagged long", st["result"].get("long") is True)
-Check("web long over counts cleared boards", st["result"]["cleared"] == 0 and st["result"]["code"].startswith("CH25L--"))
+Check("web long over counts cleared boards", st["result"]["cleared"] == 0 and st["result"]["code"].startswith(E.Version + "L--"))
 with open(os.environ["CHAIN_LONG_TOUR_FILE"]) as fh:
     saved = fh.read().strip()
 Check("web long best recorded", saved == str(st["result"]["bestBoards"]) + "," + str(st["result"]["bestScore"]))
@@ -315,11 +328,11 @@ status, st = api("/api/advance?k=" + K, {})
 Check("web advance restarts the long tour", status == 200 and st["screen"] == "play" and st["board"]["k"] == 1
       and st["board"]["long"] is True and st["board"]["style"].startswith("chevrons"))
 
-# win the whole ladder through the API with scripted policy aims (seed 96048)
-crng = random.Random(96048)
+# win the whole ladder through the API with scripted policy aims (seed 96049)
+crng = random.Random(96049)
 script = []
 cSt = E.RunState(0, long=True)
-cB = E.Attach(E.LongBoard(1, cSt.Satchel), cSt)
+cB = E.Attach(E.LongBoard(1, cSt.Satchel, pool=cSt.Pool), cSt)
 cPicks = []
 while True:
     while not cB.Over():
@@ -333,15 +346,15 @@ while True:
     cSt.Boards.append(cB)
     if cSt.K >= E.LongLength:
         break
-    offer = E.RunOffer(cSt.Run, cSt.K)
+    offer = E.RunOffer(cSt.Run, cSt.K, cSt.Pool)
     pick = offer[0] if offer else "0"
     cPicks.append(pick)
     cSt.Picks.append(pick)
     cSt.Satchel[pick] = cSt.Satchel.get(pick, 0) + 1
     cSt.K += 1
-    cB = E.Attach(E.LongBoard(cSt.K, cSt.Satchel), cSt)
+    cB = E.Attach(E.LongBoard(cSt.K, cSt.Satchel, pool=cSt.Pool), cSt)
 completeCode = cSt.Code() if cSt.K >= E.LongLength else None
-Check("scripted long tour completes (fixture sanity)", completeCode is not None and len(script) == 70 and len(cPicks) == 8)
+Check("scripted long tour completes (fixture sanity)", completeCode is not None and len(script) == 62 and len(cPicks) == 8)
 
 status, st = api("/api/start?k=" + K, {"mode": "long"})
 picksSent = 0
@@ -378,7 +391,7 @@ Check("web title lists the long record", status == 200 and st["records"].get("be
 # watch a long code: replays to over, hashes match the engine, writes no records
 os.remove(os.environ["CHAIN_LONG_TOUR_FILE"])
 wState = E.RunState(0, long=True)
-wBoard = E.Attach(E.LongBoard(1, wState.Satchel), wState)
+wBoard = E.Attach(E.LongBoard(1, wState.Satchel, pool=wState.Pool), wState)
 status, w = api("/api/watch?k=" + K, {"code": midCode})
 Check("long watch starts", status == 200 and "long tour" in w["message"])
 hashOk = True
@@ -398,7 +411,7 @@ while True:
         if pick != "0":
             wState.Satchel[pick] = wState.Satchel.get(pick, 0) + 1
         wState.K += 1
-        wBoard = E.Attach(E.LongBoard(wState.K, wState.Satchel), wState)
+        wBoard = E.Attach(E.LongBoard(wState.K, wState.Satchel, pool=wState.Pool), wState)
     else:
         watchEnd = d["watchDone"]
         wState.Boards.append(wBoard)
@@ -411,7 +424,7 @@ api("/api/quit?k=" + K, {})
 
 # watch a partial long code (last board won, ladder continues): stays open
 pSt = E.RunState(0, long=True)
-pB = E.Attach(E.LongBoard(1, pSt.Satchel), pSt)
+pB = E.Attach(E.LongBoard(1, pSt.Satchel, pool=pSt.Pool), pSt)
 prng = random.Random(96005)
 while len(pSt.Boards) < 3:
     while not pB.Over():
@@ -422,13 +435,13 @@ while len(pSt.Boards) < 3:
     pSt.Boards.append(pB)
     if len(pSt.Boards) >= 3:
         break
-    offer = E.RunOffer(pSt.Run, pSt.K)
+    offer = E.RunOffer(pSt.Run, pSt.K, pSt.Pool)
     pick = offer[0] if offer else "0"
     pSt.Picks.append(pick)
     if pick != "0":
         pSt.Satchel[pick] = pSt.Satchel.get(pick, 0) + 1
     pSt.K += 1
-    pB = E.Attach(E.LongBoard(pSt.K, pSt.Satchel), pSt)
+    pB = E.Attach(E.LongBoard(pSt.K, pSt.Satchel, pool=pSt.Pool), pSt)
 partCode = pSt.Code()
 status, _ = api("/api/watch?k=" + K, {"code": partCode})
 Check("partial long watch starts", status == 200)
@@ -524,7 +537,7 @@ def Drive(args, keys, cols=110, rows=50, wait=0.12, tail=1.2):
 def LongKeys(seed):
     trng = random.Random(seed)
     tSt = E.RunState(0, long=True)
-    tB = E.Attach(E.LongBoard(1, tSt.Satchel), tSt)
+    tB = E.Attach(E.LongBoard(1, tSt.Satchel, pool=tSt.Pool), tSt)
     keys = []
     aim = E.DefaultAim
     while True:
@@ -536,7 +549,7 @@ def LongKeys(seed):
             keys += ["R"] * d if d > 0 else ["L"] * (-d)
             aim = a
             if kind != "n":
-                keys.append(str("nrxs".index(kind) + 1))
+                keys.append(str("nrxst".index(kind) + 1))
             keys += ["SP", "w", "w", "w", "w", "w"]
             tB.Play(a, None, kind)
         if not tB.Won():
@@ -544,14 +557,14 @@ def LongKeys(seed):
         tSt.Boards.append(tB)
         if tSt.K >= E.LongLength:
             return keys, tSt, tB, True
-        offer = E.RunOffer(tSt.Run, tSt.K)
+        offer = E.RunOffer(tSt.Run, tSt.K, tSt.Pool)
         pick = offer[0] if offer else "0"
         tSt.Picks.append(pick)
         tSt.Satchel[pick] = tSt.Satchel.get(pick, 0) + 1
         keys += ["w", "w", "n", "w", "w"]
-        keys += ["0" if pick == "0" else str(E.RunOffer(tSt.Run, tSt.K).index(pick) + 1), "w", "w"]
+        keys += ["0" if pick == "0" else str(E.RunOffer(tSt.Run, tSt.K, tSt.Pool).index(pick) + 1), "w", "w"]
         tSt.K += 1
-        tB = E.Attach(E.LongBoard(tSt.K, tSt.Satchel), tSt)
+        tB = E.Attach(E.LongBoard(tSt.K, tSt.Satchel, pool=tSt.Pool), tSt)
 
 os.environ["CHAIN_LONG_TOUR_FILE"] = os.path.join(TMP, "long-pty.txt")
 longPty = os.environ["CHAIN_LONG_TOUR_FILE"]
@@ -596,7 +609,7 @@ Check("resume wiring loads the long tour", "31017" in rs and "Long tour board 5/
 txt = Drive(["--long"], ["w", "w"] + keys + ["w", "w", "r", "w", "w", "w"])
 Check("terminal restart keeps the long tour", "Long tour restarted" in txt and "31024" in txt)
 
-keys, tSt, tB, won = LongKeys(96048)
+keys, tSt, tB, won = LongKeys(96049)
 doneCode = tSt.Code()
 txt = Drive(["--long"], ["w", "w"] + keys + ["w", "w", "n", "w", "w", "q", "w", "w"])
 Check("terminal LONG TOUR COMPLETE panel", won and "LONG TOUR COMPLETE" in txt)

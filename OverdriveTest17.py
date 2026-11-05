@@ -10,7 +10,7 @@ def Check(ok, text):
 Check(E.OverdriveRally == 3 and E.OverdriveNeed == 3, "constants: rally 3, 3 segments")
 def Fresh(seed):
     st = E.RunState(seed)
-    return E.Attach(E.RunBoard(seed, 1, dict(st.Satchel)), st)
+    return E.Attach(E.RunBoard(seed, 1, dict(st.Satchel), pool=st.Pool), st)
 # find a seed and aim sequence with at least three shots of rally >= 3 on one board
 found = None
 for seed in range(1, 400):
@@ -50,7 +50,7 @@ if found:
     st2, b2 = E.ResumeRun(code)
     Check(b2.Hash() == b.Hash() and b2.Stock == b.Stock and b2.Meter == b.Meter, "run code resume reproduces Overdrive state")
     # new board starts with meter 0 and refilled satchel (no carried bonus)
-    nxt = E.RunBoard(seed, 2, dict(b.RunInfo.Satchel))
+    nxt = E.RunBoard(seed, 2, dict(b.RunInfo.Satchel), pool=b.RunInfo.Pool)
     Check(nxt.Meter == 0 and nxt.OverGiven == 0, "next board starts with an empty meter")
     Check(nxt.Stock["r"] == b.RunInfo.Satchel.get("r", 0), "next board stock comes from the satchel only (earned rebound does not carry)")
     # HUD and message

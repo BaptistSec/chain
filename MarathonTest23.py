@@ -25,14 +25,14 @@ def Kind(b, hit, left):
     n = sum(b.Stock.values())
     if n == 0 or left > n + 4:
         return "n"
-    for k in (["x", "r", "s"] if hit else ["s", "r", "x"]):
+    for k in (["x", "t", "r", "s"] if hit else ["s", "t", "r", "x"]):
         if b.Stock.get(k, 0) > 0:
             return k
     return "n"
 
 def PlayMarathon(run, rng):
     state = E.RunState(run, marathon=True)
-    board = E.Attach(E.RunBoard(run, 1, state.Satchel, marathon=True), state)
+    board = E.Attach(E.RunBoard(run, 1, state.Satchel, marathon=True, pool=state.Pool), state)
     while True:
         while not board.Over():
             left = board.Limit + board.Extra - len(board.Log)
@@ -42,12 +42,12 @@ def PlayMarathon(run, rng):
             return state, board
         state.Boards.append(board)
         choice = rng.randrange(4)
-        pick = E.RunOffer(run, state.K)[choice] if choice < 3 else "0"
+        pick = E.RunOffer(run, state.K, state.Pool)[choice] if choice < 3 else "0"
         state.Picks.append(pick)
         if pick != "0":
             state.Satchel[pick] = state.Satchel.get(pick, 0) + 1
         state.K += 1
-        board = E.Attach(E.RunBoard(run, state.K, state.Satchel, marathon=True), state)
+        board = E.Attach(E.RunBoard(run, state.K, state.Satchel, marathon=True, pool=state.Pool), state)
 
 # 1. The pinned curve
 expectQ = {1: 8, 2: 8, 3: 9, 4: 9, 5: 10, 6: 10, 7: 11, 8: 11, 9: 12, 12: 12, 13: 12, 20: 12}
@@ -117,7 +117,7 @@ for run in range(30001, 30051):
         if state.Picks[0] != "0":
             midState.Satchel[state.Picks[0]] = midState.Satchel.get(state.Picks[0], 0) + 1
         midState.K = 2
-        midBoard = E.Attach(E.RunBoard(run, 2, midState.Satchel, marathon=True), midState)
+        midBoard = E.Attach(E.RunBoard(run, 2, midState.Satchel, marathon=True, pool=midState.Pool), midState)
         midCode = midState.Code(midBoard)
         s3, b3 = E.ResumeRun(midCode)
         if not s3.Marathon or s3.K != 2 or b3.Quota != E.MarathonQuota(2) or b3.Limit != E.MarathonShotLimit(2):

@@ -9,7 +9,7 @@ Window: at least 104 columns by 49 rows.
 
 GOAL: a run is three boards. On each board earn the credit quota (9, 10 and 10; one credit per target cleared) within 8 base shots (dock and heart bonus shots can add more). Aim the cannon, fire the ball, and clear yellow targets as it bounces through the pegs. Chains and rallies score more.
 
-KEYS: left/right (or a/d) aim. Space or Enter fires. 1 to 4 choose the ball (normal, Rebound, Blast, Second Chance). p preview. f fast on/off. r restart. n next. q quits and prints your run code.
+KEYS: left/right (or a/d) aim. Space or Enter fires. 1 to 5 choose the ball (normal, Rebound, Blast, Second Chance, Twin). The twin ball joins the draft offers from CH26: on its first peg contact it splits, and its twin flies the mirrored path. p preview. f fast on/off. r restart. n next. q quits and prints your run code.
 OVERDRIVE: a shot with a rally of x3 or more fills one of 3 meter segments. The third gives +1 Rebound ball for that board only, once per board; it does not carry over.
 
 BOARDS: thirteen shapes (diamonds, waves, chevrons, arches, rings, spiral, funnel, stairs, cross, zigzag, bowl, pinwheel, columns); the shape is named in the title bar.

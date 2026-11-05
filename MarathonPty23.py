@@ -56,7 +56,7 @@ def MarathonKeys(run):
             keys += ["R"] * d if d > 0 else ["L"] * (-d)
             aim = a
             if kind != "n":
-                keys.append(str("nrxs".index(kind) + 1))
+                keys.append(str("nrxst".index(kind) + 1))
             keys += ["SP", "w", "w", "w"]
             board.Play(a, None, kind)
         if not board.Won():
@@ -64,12 +64,12 @@ def MarathonKeys(run):
         wonBoards.append(board)
         state.Boards.append(board)
         choice = rng.randrange(4)
-        pick = E.RunOffer(run, state.K)[choice] if choice < 3 else "0"
+        pick = E.RunOffer(run, state.K, state.Pool)[choice] if choice < 3 else "0"
         state.Picks.append(pick)
         if pick != "0":
             state.Satchel[pick] = state.Satchel.get(pick, 0) + 1
         keys += ["w", "w", "n", "w", "w"]
-        keys += ["0" if pick == "0" else str(E.RunOffer(run, state.K).index(pick) + 1), "w", "w"]
+        keys += ["0" if pick == "0" else str(E.RunOffer(run, state.K, state.Pool).index(pick) + 1), "w", "w"]
         state.K += 1
         board = E.Attach(E.RunBoard(run, state.K, state.Satchel, marathon=True), state)
 

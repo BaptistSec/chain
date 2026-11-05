@@ -48,12 +48,12 @@ def Keys(run):
             keys += ["R"] * d if d > 0 else ["L"] * (-d)
             aim = s.Aim
             if s.Kind != "n":
-                keys.append(str("nrxs".index(s.Kind) + 1))
+                keys.append(str("nrxst".index(s.Kind) + 1))
             keys += ["SP", "w", "w", "w"]
         keys += ["w", "w", "n", "w", "w"]
         if k < len(allb) - 1:
             pick = state.Picks[k]
-            keys += ["0" if pick == "0" else str(E.RunOffer(run, k + 1).index(pick) + 1), "w", "w"]
+            keys += ["0" if pick == "0" else str(E.RunOffer(run, k + 1, state.Pool).index(pick) + 1), "w", "w"]
     return keys, state
 
 if __name__ == "__main__":

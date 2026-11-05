@@ -70,16 +70,20 @@ Check("tour board hashes pinned", hashes == ["9bc41d12", "99f5489b", "7dd773ce",
 
 # --- 2. CH25T codes ----------------------------------------------------------
 st0 = E.RunState(0, tour=True)
-b0 = E.Attach(E.TourBoard(1, st0.Satchel), st0)
-Check("empty tour code", st0.Code(b0) == "CH25T--")
+b0 = E.Attach(E.TourBoard(1, st0.Satchel, pool=st0.Pool), st0)
+Check("empty tour code", st0.Code(b0) == E.Version + "T--")
+f0 = E.RunState(0, tour=True)
+fb0 = E.Attach(E.TourBoard(1, f0.Satchel, pool=E.RunPool), f0)
+fst, fb = E.ResumeRun("CH25T--")
+Check("frozen CH25T empty code resumes and re-emits its prefix", fst.Tour and fst.Pool == E.RunPool and fst.Code(fb) == "CH25T--")
 r0 = E.ParseRunCodeFull("CH25T--")
-Check("tour code parses to the tour arm", r0 == (0, [], [[]], False, False, False, False, True, False))
+Check("tour code parses to the tour arm", r0 == (0, [], [[]], False, False, False, False, True, False, "CH25T"))
 Check("run arm reports no tour", E.ParseRunCodeFull("CH24R-40001-9.10.10--4.3.15")[7] is False)
 Check("marathon arm reports no tour", E.ParseRunCodeFull("CH23M-40003--38r.2")[7] is False)
 
 rng = random.Random(90007)
 stT = E.RunState(0, tour=True)
-bT = E.Attach(E.TourBoard(1, stT.Satchel), stT)
+bT = E.Attach(E.TourBoard(1, stT.Satchel, pool=stT.Pool), stT)
 while True:
     while not bT.Over():
         left = bT.Limit + bT.Extra - len(bT.Log)
@@ -88,26 +92,38 @@ while True:
     if not bT.Won():
         break
     stT.Boards.append(bT)
-    offer = E.RunOffer(stT.Run, stT.K)
+    offer = E.RunOffer(stT.Run, stT.K, stT.Pool)
     pick = offer[0] if offer else "0"
     stT.Picks.append(pick)
     stT.Satchel[pick] = stT.Satchel.get(pick, 0) + 1
     stT.K += 1
-    bT = E.Attach(E.TourBoard(stT.K, stT.Satchel), stT)
+    bT = E.Attach(E.TourBoard(stT.K, stT.Satchel, pool=stT.Pool), stT)
 midCode = stT.Code(bT)
-Check("scripted tour fell mid-ladder", stT.K == 6 and midCode.startswith("CH25T-xsrxs-"))
+Check("scripted tour fell mid-ladder", stT.K == 9 and midCode.startswith(E.Version + "T-strxstrx-"))
+frozenCode = "CH25T-xsrxs-28.2.12x.1r.28r.2/29.20.35.25.13x.23x.0r/23x.12x.7r.35.14r/6x.26x.1r.38r.0s.13.25/32x.14x.37x.4r.24r.10s.2.28.27.7/2x.2x.35x.36r.8r.25r"
+fstT, fbT = E.ResumeRun(frozenCode)
+Check("frozen CH25T scripted code resumes identically", fstT.Tour and fstT.K == 6 and fstT.Pool == E.RunPool
+      and fbT.Hash() == "39177c40" and fbT.Score == 6570 and fstT.Satchel == {"r": 2, "x": 3, "s": 2}
+      and fstT.Picks == ["x", "s", "r", "x", "s"] and fstT.Code(fbT) == frozenCode)
+Check("frozen CH25T resume stopped on curated board 6", fbT.Seed == E.TourSeeds[5] and fbT.Quota == 12 and fbT.Limit == 6)
 stR, bR = E.ResumeRun(midCode)
-Check("tour code resumes to the same board", stR.Tour and stR.K == 6 and bR.Hash() == bT.Hash()
+Check("tour code resumes to the same board", stR.Tour and stR.K == 9 and bR.Hash() == bT.Hash()
       and bR.Score == bT.Score and stR.Satchel == stT.Satchel and stR.Picks == stT.Picks)
 Check("resumed tour re-emits the same code", stR.Code(bR) == midCode)
-Check("resumed tour board is the curated board 6", bR.Seed == E.TourSeeds[5] and bR.Quota == 12 and bR.Limit == 6)
+Check("resumed tour board is the curated board 9", bR.Seed == E.TourSeeds[8] and bR.Quota == 12 and bR.Limit == 5)
 # a mid-board code with no pick yet is legitimate (quit codes end open mid-board)
-wst, wb = E.ResumeRun("CH25T--1")
+wst, wb = E.ResumeRun(E.Version + "T--1")
 rst = E.RunState(0, tour=True)
-ref = E.Attach(E.TourBoard(1, rst.Satchel), rst)
+ref = E.Attach(E.TourBoard(1, rst.Satchel, pool=rst.Pool), rst)
 ref.Play(1, None, "n")
 Check("mid-board tour code resumes to play", wst.Tour and not wb.Won() and not wb.Over() and wst.K == 1
       and wb.Score == ref.Score and wb.Hash() == ref.Hash())
+fst2, fb2 = E.ResumeRun("CH25T--1")
+frst = E.RunState(0, tour=True, pool=E.RunPool)
+fref = E.Attach(E.TourBoard(1, frst.Satchel, pool=E.RunPool), frst)
+fref.Play(1, None, "n")
+Check("frozen CH25T mid-board code resumes to play with pool-3", fst2.Tour and fst2.Pool == E.RunPool and not fb2.Won()
+      and not fb2.Over() and fst2.K == 1 and fb2.Score == fref.Score and fb2.Hash() == fref.Hash())
 for bad in ("CH25T-x-", "CH25T-xs-", "CH24T--", "CH25T--1/2/3/4/5/6/7/8/9/10",
             "CH25T-xsrxsrxsx-", "CH25M-0--"):
     try:
@@ -134,7 +150,7 @@ Check("run hud still shows run progress", " Board 1/3" in runFrame)
 
 def PlayTourBoards(rngSeed, count):
     st = E.RunState(0, tour=True)
-    b = E.Attach(E.TourBoard(1, st.Satchel), st)
+    b = E.Attach(E.TourBoard(1, st.Satchel, pool=st.Pool), st)
     rng = random.Random(rngSeed)
     while True:
         while not b.Over():
@@ -144,13 +160,13 @@ def PlayTourBoards(rngSeed, count):
         if not b.Won() or len(st.Boards) + 1 >= count:
             return st, b
         st.Boards.append(b)
-        offer = E.RunOffer(st.Run, st.K)
+        offer = E.RunOffer(st.Run, st.K, st.Pool)
         pick = offer[0] if offer else "0"
         st.Picks.append(pick)
         if pick != "0":
             st.Satchel[pick] = st.Satchel.get(pick, 0) + 1
         st.K += 1
-        b = E.Attach(E.TourBoard(st.K, st.Satchel), st)
+        b = E.Attach(E.TourBoard(st.K, st.Satchel, pool=st.Pool), st)
 
 mSt, mB = PlayTourBoards(90001, 3)
 midTxt = chr(10).join(scr.Frame(mB, 0, False, None, "", True))
@@ -212,7 +228,7 @@ trials = 200
 for trial in range(trials):
     trng = random.Random(90000 + trial)
     stS = E.RunState(0, tour=True)
-    bS = E.Attach(E.TourBoard(1, stS.Satchel), stS)
+    bS = E.Attach(E.TourBoard(1, stS.Satchel, pool=stS.Pool), stS)
     while True:
         while not bS.Over():
             left = bS.Limit + bS.Extra - len(bS.Log)
@@ -225,12 +241,12 @@ for trial in range(trials):
         if stS.K >= E.TourLength:
             complete += 1
             break
-        offer = E.RunOffer(stS.Run, stS.K)
+        offer = E.RunOffer(stS.Run, stS.K, stS.Pool)
         pick = offer[0] if offer else "0"
         stS.Picks.append(pick)
         stS.Satchel[pick] = stS.Satchel.get(pick, 0) + 1
         stS.K += 1
-        bS = E.Attach(E.TourBoard(stS.K, stS.Satchel), stS)
+        bS = E.Attach(E.TourBoard(stS.K, stS.Satchel, pool=stS.Pool), stS)
 rate = complete / trials
 print("   full-tour bot completion", str(round(100 * rate, 1)) + "% over", trials, "trials; failures by board:", dict(sorted(failAt.items())))
 Check("tour is completable but earned (bot completes 10-65%)", 0.10 <= rate <= 0.65)
@@ -267,7 +283,7 @@ K = W.TOKEN
 
 status, st = api("/api/start?k=" + K, {"mode": "tour"})
 engSt = E.RunState(0, tour=True)
-engB = E.Attach(E.TourBoard(1, engSt.Satchel), engSt)
+engB = E.Attach(E.TourBoard(1, engSt.Satchel, pool=engSt.Pool), engSt)
 Check("web tour starts on curated board 1", status == 200 and st["screen"] == "play" and st["board"]["k"] == 1
       and st["board"]["style"].startswith("zigzag"))
 Check("web tour runs as run 0 (fixed ladder)", st["board"]["run"] == 0)
@@ -282,7 +298,7 @@ for i in range(14):
     rS = api("/api/shot?k=" + K, {"aim": 0, "ball": "n"})[1]
     st = api("/api/done?k=" + K, {"gen": rS["gen"], "shotId": rS["shotId"]})[1]
 Check("web tour loss reaches gameover", st["screen"] == "gameover" and st["result"]["kind"] == "tourover")
-Check("web tour over counts cleared boards", st["result"]["cleared"] == 0 and st["result"]["code"].startswith("CH25T--"))
+Check("web tour over counts cleared boards", st["result"]["cleared"] == 0 and st["result"]["code"].startswith(E.Version + "T--"))
 with open(os.environ["CHAIN_TOUR_FILE"]) as fh:
     saved = fh.read().strip()
 Check("web tour best recorded", saved == str(st["result"]["bestBoards"]) + "," + str(st["result"]["bestScore"]))
@@ -295,7 +311,7 @@ Check("web board json flags the tour", st["board"].get("tour") is True and st["b
 crng = random.Random(90001)
 script = []   # (aim, kind) across the whole completing tour
 cSt = E.RunState(0, tour=True)
-cB = E.Attach(E.TourBoard(1, cSt.Satchel), cSt)
+cB = E.Attach(E.TourBoard(1, cSt.Satchel, pool=cSt.Pool), cSt)
 cPicks = []
 while True:
     while not cB.Over():
@@ -309,15 +325,15 @@ while True:
     cSt.Boards.append(cB)
     if cSt.K >= E.TourLength:
         break
-    offer = E.RunOffer(cSt.Run, cSt.K)
+    offer = E.RunOffer(cSt.Run, cSt.K, cSt.Pool)
     pick = offer[0] if offer else "0"
     cPicks.append(pick)
     cSt.Picks.append(pick)
     cSt.Satchel[pick] = cSt.Satchel.get(pick, 0) + 1
     cSt.K += 1
-    cB = E.Attach(E.TourBoard(cSt.K, cSt.Satchel), cSt)
+    cB = E.Attach(E.TourBoard(cSt.K, cSt.Satchel, pool=cSt.Pool), cSt)
 completeCode = cSt.Code() if cSt.K >= E.TourLength else None
-Check("scripted tour completes (fixture sanity)", completeCode is not None and len(script) == 57 and len(cPicks) == 8)
+Check("scripted tour completes (fixture sanity)", completeCode is not None and len(script) == 58 and len(cPicks) == 8)
 
 status, st = api("/api/start?k=" + K, {"mode": "tour"})
 picksSent = 0
@@ -353,7 +369,7 @@ Check("web title lists the tour record", status == 200 and st["records"].get("be
 # watch a tour code: replays to over, hashes match the engine, writes no records
 os.remove(os.environ["CHAIN_TOUR_FILE"])
 wState = E.RunState(0, tour=True)
-wBoard = E.Attach(E.TourBoard(1, wState.Satchel), wState)
+wBoard = E.Attach(E.TourBoard(1, wState.Satchel, pool=wState.Pool), wState)
 status, w = api("/api/watch?k=" + K, {"code": midCode})
 Check("tour watch starts", status == 200)
 hashOk = True
@@ -373,12 +389,12 @@ while True:
         if pick != "0":
             wState.Satchel[pick] = wState.Satchel.get(pick, 0) + 1
         wState.K += 1
-        wBoard = E.Attach(E.TourBoard(wState.K, wState.Satchel), wState)
+        wBoard = E.Attach(E.TourBoard(wState.K, wState.Satchel, pool=wState.Pool), wState)
     else:
         watchEnd = d["watchDone"]
         wState.Boards.append(wBoard)
         break
-Check("tour watch replays the failure", watchEnd is not None and watchEnd["won"] is False and advances == 5 and wState.K == 6)
+Check("tour watch replays the failure", watchEnd is not None and watchEnd["won"] is False and advances == 8 and wState.K == 9)
 Check("tour watch shot hashes match the engine", hashOk)
 Check("tour watch writes no records", not os.path.exists(os.environ["CHAIN_TOUR_FILE"]))
 Check("bad tour watch rejected", api("/api/watch?k=" + K, {"code": "CH25T-xs-"})[0] == 400)
@@ -386,7 +402,7 @@ api("/api/quit?k=" + K, {})
 
 # watch a partial tour code (last board won, tour continues): the run stays open
 pSt = E.RunState(0, tour=True)
-pB = E.Attach(E.TourBoard(1, pSt.Satchel), pSt)
+pB = E.Attach(E.TourBoard(1, pSt.Satchel, pool=pSt.Pool), pSt)
 prng = random.Random(90001)
 while len(pSt.Boards) < 3:
     while not pB.Over():
@@ -397,13 +413,13 @@ while len(pSt.Boards) < 3:
     pSt.Boards.append(pB)
     if len(pSt.Boards) >= 3:
         break
-    offer = E.RunOffer(pSt.Run, pSt.K)
+    offer = E.RunOffer(pSt.Run, pSt.K, pSt.Pool)
     pick = offer[0] if offer else "0"
     pSt.Picks.append(pick)
     if pick != "0":
         pSt.Satchel[pick] = pSt.Satchel.get(pick, 0) + 1
     pSt.K += 1
-    pB = E.Attach(E.TourBoard(pSt.K, pSt.Satchel), pSt)
+    pB = E.Attach(E.TourBoard(pSt.K, pSt.Satchel, pool=pSt.Pool), pSt)
 partCode = pSt.Code()
 if os.path.exists(os.environ["CHAIN_TOUR_FILE"]):
     os.remove(os.environ["CHAIN_TOUR_FILE"])
@@ -504,7 +520,7 @@ def Drive(args, keys, cols=110, rows=50, wait=0.12, tail=1.2):
 def TourKeys(seed):
     trng = random.Random(seed)
     tSt = E.RunState(0, tour=True)
-    tB = E.Attach(E.TourBoard(1, tSt.Satchel), tSt)
+    tB = E.Attach(E.TourBoard(1, tSt.Satchel, pool=tSt.Pool), tSt)
     keys = []
     aim = E.DefaultAim
     while True:
@@ -516,7 +532,7 @@ def TourKeys(seed):
             keys += ["R"] * d if d > 0 else ["L"] * (-d)
             aim = a
             if kind != "n":
-                keys.append(str("nrxs".index(kind) + 1))
+                keys.append(str("nrxst".index(kind) + 1))
             keys += ["SP", "w", "w", "w", "w", "w"]
             tB.Play(a, None, kind)
         if not tB.Won():
@@ -524,14 +540,14 @@ def TourKeys(seed):
         tSt.Boards.append(tB)
         if tSt.K >= E.TourLength:
             return keys, tSt, tB, True
-        offer = E.RunOffer(tSt.Run, tSt.K)
+        offer = E.RunOffer(tSt.Run, tSt.K, tSt.Pool)
         pick = offer[0] if offer else "0"
         tSt.Picks.append(pick)
         tSt.Satchel[pick] = tSt.Satchel.get(pick, 0) + 1
         keys += ["w", "w", "n", "w", "w"]
-        keys += ["0" if pick == "0" else str(E.RunOffer(tSt.Run, tSt.K).index(pick) + 1), "w", "w"]
+        keys += ["0" if pick == "0" else str(E.RunOffer(tSt.Run, tSt.K, tSt.Pool).index(pick) + 1), "w", "w"]
         tSt.K += 1
-        tB = E.Attach(E.TourBoard(tSt.K, tSt.Satchel), tSt)
+        tB = E.Attach(E.TourBoard(tSt.K, tSt.Satchel, pool=tSt.Pool), tSt)
 
 os.environ["CHAIN_TOUR_FILE"] = os.path.join(TMP, "tour-pty.txt")
 menu = Drive(["--menu"], ["w", "w"])
@@ -546,17 +562,17 @@ keys, tSt, tB, won = TourKeys(90007)
 failCode = tSt.Code(tB)
 txt = Drive(["--tour"], ["w", "w"] + keys + ["w", "w", "n", "w", "w", "q", "w", "w"])
 Check("terminal TOUR OVER panel", "TOUR OVER" in txt)
-Check("terminal tour cleared count", "5 boards cleared of 9" in txt.replace("\n", " "))
+Check("terminal tour cleared count", "8 boards cleared of 9" in txt.replace("\n", " "))
 Check("terminal tour over panel fits the box", max(len(l) for l in PanelBlock(txt, "TOUR OVER")) <= 104)
 Check("terminal tour code matches engine", PanelCode(txt, "Tour code") == failCode)
 Check("terminal tour best line shown", "Local best tour:" in txt)
 saved = open(os.environ["CHAIN_TOUR_FILE"]).read().strip()
 total = sum(b.Score for b in tSt.Boards) + tB.Score
-Check("terminal tour record holds 5,total", saved == "5," + str(total))
+Check("terminal tour record holds 8,total", saved == "8," + str(total))
 Check("terminal lost board offers end the tour", "end the tour" in txt)
 
 rs = Drive(["--resume", failCode], ["w", "w", "w"], wait=0.15)
-Check("resume wiring loads the tour", "30008" in rs and "Tour board 6/9" in rs)
+Check("resume wiring loads the tour", "30006" in rs and "Tour board 9/9" in rs)
 txt = Drive(["--tour"], ["w", "w"] + keys + ["w", "w", "r", "w", "w", "w"])
 Check("terminal restart keeps the tour", "Tour restarted" in txt and "30005" in txt)
 

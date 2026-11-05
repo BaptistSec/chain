@@ -19,14 +19,14 @@ def Kind(b, hit, left):
     n = sum(b.Stock.values())
     if n == 0 or left > n + 4:
         return "n"
-    for k in (["s", "x", "r"] if os.environ.get("PICK") == "s" else ["x", "r", "s"] if hit else ["s", "r", "x"]):
+    for k in (["s", "x", "r"] if os.environ.get("PICK") == "s" else ["x", "t", "r", "s"] if hit else ["s", "t", "r", "x"]):
         if b.Stock.get(k, 0) > 0:
             return k
     return "n"
 
 def PlayRun(run, rng):
     state = E.RunState(run)
-    board = E.Attach(E.RunBoard(run, 1, state.Satchel), state)
+    board = E.Attach(E.RunBoard(run, 1, state.Satchel, pool=state.Pool), state)
     starts = []
     while True:
         starts.append(dict(board.Stock))
@@ -39,12 +39,12 @@ def PlayRun(run, rng):
         state.Boards.append(board)
         forced = os.environ.get("PICK")
         choice = rng.randrange(4)
-        pick = forced if forced else (E.RunOffer(run, state.K)[choice] if choice < 3 else "0")
+        pick = forced if forced else (E.RunOffer(run, state.K, state.Pool)[choice] if choice < 3 else "0")
         state.Picks.append(pick)
         if pick != "0":
             state.Satchel[pick] = state.Satchel.get(pick, 0) + 1
         state.K += 1
-        board = E.Attach(E.RunBoard(run, state.K, state.Satchel), state)
+        board = E.Attach(E.RunBoard(run, state.K, state.Satchel, pool=state.Pool), state)
     if board.Won() and state.K >= len(E.RunQuotas):
         state.Boards.append(board)
         return state, board, starts, True
@@ -66,7 +66,7 @@ for run in range(30001, 30001 + n):
     allBoards = state.Boards + ([] if complete else [board])
     for i, b in enumerate(allBoards):
         used = collections.Counter(s.Kind for s in b.Log)
-        for c in "rxs":
+        for c in "rxst":
             if starts[i].get(c, 0) + (b.OverGiven if c == "r" else 0) - used.get(c, 0) != b.Stock.get(c, 0):
                 bad["stock " + c] += 1
         hearts = sum(1 for v in b.Grid.values() if v == "F")
