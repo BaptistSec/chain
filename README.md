@@ -1,6 +1,6 @@
 # CHAIN
 
-A terminal game in Python. Aim a cannon, fire a ball into a board of pegs and targets, and clear every board in a run. Python 3 standard library only.
+A peg-and-target game in Python, with browser and terminal interfaces. Aim a cannon, fire a ball into a board of pegs and targets, and clear every board in a run. Python 3 standard library only.
 
 ## Project status
 
@@ -18,7 +18,7 @@ Choose a three-board run, a daily board, an endless marathon or a nine-board tou
 
 ## Run it
 
-- Graphical web UI (new, any platform with a browser): `python3 ChainWeb.py` - starts a localhost server and opens the game in your browser with drawn sprites, mouse aiming and animated shots. It listens on 127.0.0.1 only and the printed link carries a per-launch token, so nothing else on the machine (or the network) can drive it. Same engine, same rules, same run codes, same records files. Linux is the primary platform and the web UI is developed and tested natively on Linux/Ubuntu; on Windows double-click `PlayWeb.bat` instead. Browser launch under Wine is untested - if no browser opens, copy the printed link into any browser on the same machine.
+- Browser interface (Python required; Linux-first): `python3 ChainWeb.py` - starts a localhost server and opens the game in your browser with drawn sprites, mouse aiming and animated shots. It listens on 127.0.0.1 only and the printed link carries a per-launch token, to restrict access to the local game session. Same engine, same rules, same run codes, same records files. Linux is the primary platform and the web UI is developed and tested natively on Linux/Ubuntu; on Windows double-click `PlayWeb.bat` instead. Browser launch under Wine is untested - if no browser opens, copy the printed link into any browser on the same machine.
 - Terminal (original): `python3 ChainDemo.py --menu`. Linux is the primary platform: the game and its test suite are developed and run natively on Linux/Ubuntu, and platform-specific modules (msvcrt, termios) are imported only behind OS guards.
 - Windows terminal: keep `ChainDemo.py`, `Play.bat` and `PlayText.bat` in one folder and double-click `Play.bat`. Windows is untested.
 
